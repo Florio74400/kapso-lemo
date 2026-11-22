@@ -3,7 +3,8 @@
 import crypto from 'node:crypto';
 import { config, llmMode } from './config.js';
 import { query, one } from './db.js';
-import { sendText, sendButtons } from './kapso.js';
+import { sendText, sendButtons, sendList } from './kapso.js';
+import * as alerts from './alerts.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
 
@@ -18,8 +19,8 @@ export function phoneHash(phone) {
   return crypto.createHmac('sha256', config.appSecret).update(String(phone)).digest('hex');
 }
 
-export function waLink(code) {
-  const text = encodeURIComponent(`Bonjour, je souhaite donner mon avis (${code})`);
+export function waLink(code, kind = 'feedback') {
+  const text = encodeURIComponent(kind === 'alerts' ? `Bonjour, je veux recevoir les infos remontées (${code})` : `Bonjour, je souhaite donner mon avis (${code})`);
   return `https://wa.me/${config.whatsappDisplayNumber || 'NUMERO'}?text=${text}`;
 }
 
@@ -39,20 +40,21 @@ export async function drainQueues() {
 }
 
 // --- Envoi + journalisation
-async function reply(phone, body, { sessionId = null, companyId = null, buttons = null } = {}) {
+export async function reply(phone, body, { sessionId = null, companyId = null, buttons = null, list = null } = {}) {
   await query(
     `insert into messages (session_id, company_id, direction, role, phone_hash, kind, body) values ($1,$2,'out','lemo',$3,$4,$5)`,
-    [sessionId, companyId, phoneHash(phone), buttons ? 'interactive' : 'text', body],
+    [sessionId, companyId, phoneHash(phone), buttons || list ? 'interactive' : 'text', body],
   );
   try {
     if (buttons) await sendButtons(phone, body, buttons);
+    else if (list) await sendList(phone, body, list.button, list.rows);
     else await sendText(phone, body);
   } catch (err) {
     console.error('[kapso] envoi échoué :', err.message);
   }
 }
 
-async function recordInbound(msg, { sessionId = null, companyId = null, role }) {
+export async function recordInbound(msg, { sessionId = null, companyId = null, role }) {
   const rows = await query(
     `insert into messages (session_id, company_id, direction, role, wa_message_id, phone_hash, kind, body, transcript)
      values ($1,$2,'in',$3,$4,$5,$6,$7,$8) on conflict (wa_message_id) do nothing returning id`,
@@ -92,6 +94,7 @@ async function route(msg) {
       `select c.*, co.name as company_name, co.retention_days from collections c join companies co on co.id = c.company_id where c.code = $1`,
       [code],
     );
+    if (col?.kind === 'alerts') return alerts.startSubscription(msg, hash, col);
     if (col) return startSession(msg, hash, col);
   }
 
@@ -105,9 +108,18 @@ async function route(msg) {
   );
   if (session) return continueSession(msg, hash, session);
 
-  // 4. Dirigeant
+  // 4. Abonné aux alertes remontées : choix en cours, ou question libre
+  const sub = await alerts.currentSubscription(hash);
+  if (sub && sub.state !== 'active') return alerts.continueSetup(msg, hash, sub);
+
+  // 5. Dirigeant (s'il est aussi abonné, seules ses demandes de dirigeant lui sont réservées)
   const company = await one('select * from companies where $1 = any(owner_phones) limit 1', [msg.phone]);
-  if (company) return ownerMessage(msg, company);
+  if (company) {
+    if (!sub) return ownerMessage(msg, company);
+    const intent = await classifyOwnerMessage((msg.kind === 'audio' ? msg.transcript : msg.body) || '').catch(() => null);
+    if (intent && ['create_collection', 'report', 'list'].includes(intent.intent)) return ownerMessage(msg, company, intent);
+  }
+  if (sub) return alerts.answerQuestion(msg, hash, sub);
 
   // 5. Personne désinscrite : silence total
   if (await one('select 1 from opt_outs where phone_hash = $1', [hash])) {
@@ -253,6 +265,7 @@ async function optOut(msg, hash) {
     [hash],
   );
   for (const a of active) await query('delete from messages where session_id=$1', [a.id]);
+  await query(`update subscriptions set state='opted_out', phone=null, updated_at=now() where phone_hash=$1 and state not in ('ended','declined','opted_out')`, [hash]);
   await recordInbound(msg, { role: 'unknown' });
   await reply(msg.phone, "C'est noté : vous ne recevrez plus de messages de notre part et vos réponses en cours ont été supprimées.");
   return 'opted_out';
@@ -266,28 +279,28 @@ export function newCode() {
   return c;
 }
 
-export async function createCollection(companyId, title, question) {
+export async function createCollection(companyId, title, question, kind = 'feedback') {
   for (let i = 0; i < 5; i++) {
     const code = newCode();
     const row = await one(
-      `insert into collections (company_id, code, title, question) values ($1,$2,$3,$4) on conflict (code) do nothing returning *`,
-      [companyId, code, title, question],
+      `insert into collections (company_id, code, title, question, kind) values ($1,$2,$3,$4,$5) on conflict (code) do nothing returning *`,
+      [companyId, code, title, question, kind],
     );
     if (row) return row;
   }
   throw new Error('Impossible de générer un code unique');
 }
 
-async function ownerMessage(msg, company) {
+async function ownerMessage(msg, company, knownIntent = null) {
   if (!(await recordInbound(msg, { companyId: company.id, role: 'owner' }))) return 'ignored:duplicate';
   const text = msg.kind === 'audio' ? msg.transcript : msg.body;
   if (!text) {
     await reply(msg.phone, "Je n'ai pas compris ce message. Écrivez par exemple : « Je veux savoir ce que mes clients ont pensé de leur séjour ».", { companyId: company.id });
     return 'owner_unreadable';
   }
-  let intent;
+  let intent = knownIntent;
   try {
-    intent = await classifyOwnerMessage(text);
+    intent ??= await classifyOwnerMessage(text);
   } catch (err) {
     console.error('[ia] intention :', err.message);
     await reply(msg.phone, 'Petit souci technique, réessayez dans un instant.', { companyId: company.id });

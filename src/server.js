@@ -9,6 +9,7 @@ import { handleInbound, createCollection, waLink, phoneHash, drainQueues } from 
 import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
+import { alertStats, sendNow } from './alerts.js';
 
 // ---------------- Webhook ----------------
 // 1) vérifie la signature, 2) enregistre l'événement (anti-doublon par X-Idempotency-Key),
@@ -150,10 +151,11 @@ export function createApp() {
   });
 
   app.post('/collections', auth, async (req, res) => {
-    const title = String(req.body.title || '').trim().slice(0, 80);
-    const question = String(req.body.question || '').trim().slice(0, 300);
+    const kind = req.body.kind === 'alerts' ? 'alerts' : 'feedback';
+    const title = String(req.body.title || '').trim().slice(0, 80) || (kind === 'alerts' ? 'votre journée de ski' : '');
+    const question = String(req.body.question || '').trim().slice(0, 300) || (kind === 'alerts' ? "Comment s'est passée votre journée de ski ?" : 'Comment avez-vous vécu votre expérience ? Racontez-nous librement, par écrit ou en vocal.');
     if (!title || !question) return res.redirect('/');
-    const col = await createCollection(req.company.id, title, question);
+    const col = await createCollection(req.company.id, title, question, kind);
     res.redirect(`/collections/${col.id}`);
   });
 
@@ -170,13 +172,14 @@ export function createApp() {
       report = { ...(await import('./report.js').then((m) => m.collectionStats(col.id))), threshold: req.company.privacy_threshold, belowThreshold: false, synthesis: null };
     }
     const feedbacks = await query('select * from feedbacks where collection_id=$1 order by created_at desc', [col.id]);
-    res.send(page(req, col.title, V.collectionPage({ col, report, feedbacks, link: waLink(col.code), synthesisError })));
+    const alertData = col.kind === 'alerts' ? await alertStats(col.id) : null;
+    res.send(page(req, col.title, V.collectionPage({ col, report, feedbacks, link: waLink(col.code, col.kind), synthesisError, alertData, notice: req.query.notice })));
   });
 
   app.get('/collections/:id/qr.png', auth, async (req, res) => {
     const col = await ownCollection(req);
     if (!col) return res.sendStatus(404);
-    res.type('png').send(await QRCode.toBuffer(waLink(col.code), { width: 400, margin: 1 }));
+    res.type('png').send(await QRCode.toBuffer(waLink(col.code, col.kind), { width: 400, margin: 1 }));
   });
 
   app.post('/collections/:id/status', auth, async (req, res) => {
@@ -184,6 +187,14 @@ export function createApp() {
     if (!col) return res.sendStatus(404);
     await query('update collections set status=$2 where id=$1', [col.id, col.status === 'open' ? 'closed' : 'open']);
     res.redirect(`/collections/${col.id}`);
+  });
+
+  app.post('/collections/:id/send-now', auth, async (req, res) => {
+    const col = await ownCollection(req);
+    if (!col || col.kind !== 'alerts') return res.sendStatus(404);
+    const r = await sendNow(col.id, req.body.type === 'eod' ? 'eod' : 'morning');
+    const notice = `${r.sent} message(s) envoyé(s)${r.skipped ? `, ${r.skipped} non envoyé(s) : fenêtre WhatsApp de 24 h fermée` : ''}.`;
+    res.redirect(`/collections/${col.id}?notice=${encodeURIComponent(notice)}`);
   });
 
   app.post('/collections/:id/synthesis', auth, async (req, res) => {

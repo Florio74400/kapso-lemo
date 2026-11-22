@@ -2,8 +2,11 @@
 import { query } from './db.js';
 import { finalize, analyzeSession } from './conversation.js';
 import { processEvent } from './server.js';
+import { runAlerts } from './alerts.js';
 
 export async function runMaintenance() {
+  // 0. Alertes remontées : info du matin, question de fin de journée, fin d'abonnement.
+  await runAlerts();
   // 1. Relance restée sans réponse 30 min : on analyse ce qu'on a (sans envoyer de message).
   for (const s of await query(`select id from sessions where state='awaiting_followup' and updated_at < now() - interval '30 minutes'`)) {
     await finalize(s.id);
@@ -32,6 +35,10 @@ export async function runMaintenance() {
   );
   await query(
     `delete from messages m using companies co where m.company_id=co.id and m.created_at < now() - make_interval(days => co.retention_days)`,
+  );
+  await query(
+    `delete from questions q using collections c, companies co
+     where q.collection_id=c.id and c.company_id=co.id and q.created_at < now() - make_interval(days => co.retention_days)`,
   );
   await query(`delete from messages where company_id is null and created_at < now() - interval '30 days'`);
   await query(`delete from webhook_events where created_at < now() - interval '7 days'`);

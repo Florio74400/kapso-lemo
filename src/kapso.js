@@ -46,6 +46,33 @@ export async function sendButtons(to, body, buttons) {
   });
 }
 
+// Liste de choix (max 10 lignes ; titre <= 24 caractères, description <= 72, bouton <= 20).
+export async function sendList(to, body, button, rows) {
+  if (!kapsoLive()) return { simulated: true };
+  return post({
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: body },
+      action: {
+        button: button.slice(0, 20),
+        sections: [{ title: 'Choix', rows: rows.slice(0, 10).map((r) => ({ id: r.id, title: r.title.slice(0, 24), ...(r.description ? { description: r.description.slice(0, 72) } : {}) })) }],
+      },
+    },
+  });
+}
+
+// Message modèle approuvé par Meta (seul envoi possible hors fenêtre de 24 h ; payant ; indisponible en sandbox).
+export async function sendTemplate(to, name, params, language = 'fr') {
+  if (!kapsoLive()) return { simulated: true };
+  return post({
+    to,
+    type: 'template',
+    template: { name, language: { code: language }, components: [{ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) }] },
+  });
+}
+
 // Extrait les messages d'un payload webhook Kapso v2 (simple ou groupé).
 export function extractMessages(payload) {
   const items = payload?.batch && Array.isArray(payload.data) ? payload.data : [payload];

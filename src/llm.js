@@ -193,3 +193,44 @@ function simSynthesis(analyses) {
     actions: problems.map((p) => `Traiter en priorité : ${p.replace(/ \(.*/, '')}`),
   };
 }
+
+// ================= Alertes remontées : questions libres des abonnés =================
+export const TOPICS = ['ouverture_remontees', 'horaires', 'meteo_neige', 'forfaits_tarifs', 'acces_parking_navettes', 'securite', 'restauration_services', 'autre'];
+
+export const AlertAnswer = z.object({
+  answer: z.string().describe('Réponse courte (600 caractères max), utile, en français, sans inventer.'),
+  topic: z.enum(TOPICS),
+  answerable: z.boolean().describe("true seulement si le contexte contenait l'information demandée."),
+});
+
+export async function answerAlertQuestion({ question, context, company }) {
+  if (llmMode() === 'simulated') return simAnswer(question, context);
+  return structured(
+    AlertAnswer,
+    `Tu es l'assistant WhatsApp de ${company} pour les skieurs abonnés aux alertes remontées.
+Réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas (tarif, événement, restaurant, etc.), dis-le simplement et conseille de se renseigner aux caisses, et mets answerable=false.
+Réponse brève, chaleureuse, pratique. Pas de titre, pas de liste longue. Classe aussi la question dans un thème.
+${GROUNDING}`,
+    `<contexte>\n${context}\n</contexte>\n<question_skieur>${question}</question_skieur>`,
+  );
+}
+
+function simAnswer(question, context) {
+  const t = norm(question);
+  const topic = /ouvert|ferme|remont|telecabine|telesiege|telepherique/.test(t)
+    ? 'ouverture_remontees'
+    : /heure|horaire/.test(t)
+      ? 'horaires'
+      : /meteo|neige|vent|temps/.test(t)
+        ? 'meteo_neige'
+        : /prix|tarif|forfait/.test(t)
+          ? 'forfaits_tarifs'
+          : /parking|bus|navette/.test(t)
+            ? 'acces_parking_navettes'
+            : 'autre';
+  if (topic === 'forfaits_tarifs' || topic === 'autre') {
+    return { answer: "Je n'ai pas cette information. Le plus simple est de vous renseigner aux caisses du domaine.", topic, answerable: false };
+  }
+  const line = context.split('\n').find((l) => /^Domaine de l'abonné/.test(l));
+  return { answer: `Voici ce que j'ai : consultez le message du matin pour le détail. ${line || ''}`.trim(), topic, answerable: true };
+}

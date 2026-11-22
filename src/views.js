@@ -61,8 +61,9 @@ export function dashboardPage({ collections }) {
   return `<h1>Collectes</h1><p class="mute">Créez une collecte ici ou en écrivant à LEMO sur WhatsApp.</p>
 <table><tr><th>Collecte</th><th>Réponses</th><th>Alertes</th><th>Statut</th><th>Créée</th></tr>${rows || '<tr><td colspan="5" class="mute">Aucune collecte.</td></tr>'}</table>
 <h2>Nouvelle collecte</h2><form class="card" method="post" action="/collections">
-<label>Sujet (court)</label><input name="title" placeholder="votre séjour" required maxlength="80">
-<label>Question ouverte posée aux clients</label><textarea name="question" rows="2" required maxlength="300">Comment avez-vous vécu votre séjour ? Racontez-nous librement, par écrit ou en vocal.</textarea>
+<label>Type</label><select name="kind"><option value="feedback">Retours clients (question ouverte)</option><option value="alerts">Alertes remontées + questions + retour de fin de journée</option></select>
+<label>Sujet (court)</label><input name="title" placeholder="votre séjour" maxlength="80">
+<label>Question ouverte posée aux clients (pour les alertes : question de fin de journée, laisser vide pour la valeur par défaut)</label><textarea name="question" rows="2" maxlength="300" placeholder="Comment avez-vous vécu votre séjour ? Racontez-nous librement, par écrit ou en vocal."></textarea>
 <p><button>Créer la collecte</button></p></form>`;
 }
 
@@ -78,7 +79,26 @@ function bars(items, labels = {}) {
     .join('');
 }
 
-export function collectionPage({ col, report, feedbacks, link, synthesisError }) {
+const TOPIC_LABEL = { ouverture_remontees: 'Ouverture des remontées', horaires: 'Horaires', meteo_neige: 'Météo et neige', forfaits_tarifs: 'Forfaits et tarifs', acces_parking_navettes: 'Accès, parking, navettes', securite: 'Sécurité', restauration_services: 'Restauration et services', autre: 'Autre' };
+
+function alertsBlock(col, a) {
+  const q = (list) =>
+    list.length
+      ? list.slice(0, 30).map((x) => `<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill">${esc(TOPIC_LABEL[x.topic] || x.topic)}</span>${x.answerable === false ? '<span class="pill high">sans réponse</span>' : ''}<span style="flex:1">${esc(x.question)}</span><span class="mute">${new Date(x.created_at).toLocaleString('fr-FR')}</span></div>`).join('')
+      : '<p class="mute">Aucune question pour l\'instant.</p>';
+  return `<h2>Alertes remontées</h2>
+<div class="grid"><div class="card"><div class="mute">Abonnés actifs</div><div class="kpi">${a.active}</div><div class="mute">${a.subscribers} au total</div></div>
+<div class="card"><div class="mute">Questions posées</div><div class="kpi">${a.questions.length}</div><div class="mute">${a.unanswered.length} sans réponse</div></div>
+<div class="card"><div class="mute">Envois non faits (fenêtre 24 h fermée)</div><div class="kpi" style="color:${a.skipped ? 'var(--warn)' : 'inherit'}">${a.skipped}</div></div></div>
+<div class="grid"><div class="card"><b>Domaines demandés</b>${bars(a.byDomain)}</div><div class="card"><b>Jours demandés</b>${bars(a.byDay)}</div><div class="card"><b>Sujets des questions</b>${bars(a.topics, TOPIC_LABEL)}</div></div>
+<div class="card"><b>Test immédiat</b><p class="mute">Les envois automatiques partent vers 8h (info du matin) et 16h (question de fin de journée), heure de Paris. Pour une démo, déclenchez-les maintenant :</p>
+<div class="row"><form method="post" action="/collections/${col.id}/send-now"><input type="hidden" name="type" value="morning"><button>Envoyer l'info du matin</button></form>
+<form method="post" action="/collections/${col.id}/send-now"><input type="hidden" name="type" value="eod"><button class="ghost">Envoyer la question de fin de journée</button></form></div></div>
+<h2>Questions sans réponse : ce qui manque à votre communication</h2><div class="card">${q(a.unanswered)}</div>
+<h2>Dernières questions</h2><div class="card">${q(a.questions)}</div>`;
+}
+
+export function collectionPage({ col, report, feedbacks, link, synthesisError, alertData = null, notice = null }) {
   const fb = feedbacks
     .map((f) => {
       const a = typeof f.analysis === 'string' ? JSON.parse(f.analysis) : f.analysis;
@@ -109,10 +129,11 @@ ${s.insight ? `<p><b>Découverte :</b> ${esc(s.insight)}</p>` : ''}
 <div class="card"><div class="mute">Alertes</div><div class="kpi" style="color:${alerts.length ? 'var(--bad)' : 'inherit'}">${alerts.length}</div></div>
 <div class="card"><div class="mute">Statut</div><div class="kpi" style="font-size:20px">${col.status === 'open' ? 'Ouverte' : 'Close'}</div>
 <form method="post" action="/collections/${col.id}/status"><button class="ghost">${col.status === 'open' ? 'Clore' : 'Rouvrir'}</button></form></div></div>
-<h2>Partager</h2><div class="card row"><img src="/collections/${col.id}/qr.png" width="140" height="140" alt="QR code de la collecte" style="background:#fff;border-radius:8px">
+${notice ? `<div class="banner">${esc(notice)}</div>` : ''}<h2>Partager</h2><div class="card row"><img src="/collections/${col.id}/qr.png" width="140" height="140" alt="QR code de la collecte" style="background:#fff;border-radius:8px">
 <div style="flex:1;min-width:240px"><label>Lien WhatsApp</label><input readonly value="${esc(link)}" onclick="this.select()"><p class="mute">Chaque client qui ouvre ce lien démarre sa propre conversation. Les réponses ne se mélangent pas.</p></div></div>
 ${alerts.length ? `<h2>Alertes</h2>${alerts.map((f) => `<div class="card"><span class="pill ${esc(f.urgency)}">Urgence ${esc(URG_LABEL[f.urgency])}</span> <a href="#f-${f.id}">${esc((typeof f.analysis === 'string' ? JSON.parse(f.analysis) : f.analysis).summary)}</a></div>`).join('')}` : ''}
-<h2>Synthèse</h2><div class="card">${synth}</div>
+${alertData ? alertsBlock(col, alertData) : ''}
+<h2>${alertData ? 'Retours de fin de journée : synthèse' : 'Synthèse'}</h2><div class="card">${synth}</div>
 <div class="grid"><div class="card"><b>Émotions</b>${bars(report.emotions, EMO_LABEL)}</div><div class="card"><b>Sujets</b>${bars(report.topics)}</div></div>
 <h2>Retours (${report.n})</h2>${fb || '<p class="mute">Aucun retour pour l\'instant.</p>'}`;
 }

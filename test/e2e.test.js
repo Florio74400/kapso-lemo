@@ -190,3 +190,84 @@ test('maintenance : purge selon la durée de conservation', async () => {
   const n = await one('select count(*)::int as n from feedbacks where collection_id=$1', [collection.id]);
   assert.equal(n.n, 0);
 });
+
+// ================= Parcours alertes remontées =================
+const { runAlerts, parisNow, addDays } = await import('../src/alerts.js');
+const { createCollection } = await import('../src/conversation.js');
+
+test('alertes : inscription, questions, info du matin, retour de fin de journée, fin', async () => {
+  const col = await createCollection(company.id, 'votre journée de ski', "Comment s'est passée votre journée de ski ?", 'alerts');
+  const P = '33688888888';
+  const today = parisNow().date;
+  const d1 = addDays(today, 1);
+
+  await say(P, `Bonjour, je veux recevoir les infos remontées (${col.code})`);
+  assert.match(await lastOut(P), /chaque matin.*Acceptez-vous/s);
+  await deliver(fakeInbound({ phone: P, text: "Oui, j'accepte", buttonId: 'alert_yes' }));
+  assert.match(await lastOut(P), /Quel domaine/);
+  await deliver(fakeInbound({ phone: P, text: 'Brévent – Flégère', buttonId: 'dom:brevent-flegere' }));
+  assert.match(await lastOut(P), /Pour quels jours/);
+  await say(P, 'demain');
+  let sub = await one('select * from subscriptions where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(sub.state, 'active');
+  assert.deepEqual(sub.days, [d1]);
+
+  await say(P, 'Est-ce que le téléphérique du Brévent est ouvert demain ?');
+  await say(P, 'Combien coûte le forfait journée ?');
+  const qs = await query('select topic, answerable from questions where collection_id=$1 order by created_at', [col.id]);
+  assert.equal(qs.length, 2);
+  assert.equal(qs[0].topic, 'ouverture_remontees');
+  assert.equal(qs[1].answerable, false, 'question sans réponse repérée');
+  assert.match(await lastOut(P), /Données de démonstration/);
+
+  let r = await runAlerts({ date: d1, hour: 9 });
+  assert.equal(r.morning, 1);
+  assert.match(await lastOut(P), /Brévent – Flégère.*Ouvert/s);
+  r = await runAlerts({ date: d1, hour: 10 });
+  assert.equal(r.morning, 0, 'pas de doublon');
+
+  r = await runAlerts({ date: d1, hour: 16 });
+  assert.equal(r.eod, 1);
+  assert.match(await lastOut(P), /Comment s'est passée votre journée/);
+  await say(P, "Super journée, la neige était top mais énorme attente au téléphérique du Brévent le matin, il faudrait plus de cabines.");
+  const f = await one('select * from feedbacks where collection_id=$1', [col.id]);
+  assert.ok(f && f.verbatim.includes('attente'), 'retour de fin de journée analysé');
+
+  r = await runAlerts({ date: addDays(d1, 1), hour: 9 });
+  sub = await one('select * from subscriptions where id=$1', [sub.id]);
+  assert.equal(sub.state, 'ended');
+  assert.equal(sub.phone, null, 'numéro effacé après le dernier jour');
+});
+
+test('alertes : fenêtre WhatsApp fermée = pas d’envoi libre', async () => {
+  const col = await one(`select * from collections where kind='alerts' limit 1`);
+  const P = '33689999999';
+  const d3 = addDays(parisNow().date, 3);
+  await say(P, `Infos (${col.code})`);
+  await say(P, 'oui');
+  await say(P, 'Les Houches');
+  await deliver(fakeInbound({ phone: P, text: 'J+3', buttonId: `days:${d3}` }));
+  await query(`update messages set created_at = now() - interval '3 days' where phone_hash=$1`, [phoneHash(P)]);
+  const before = await one(`select count(*)::int as n from messages where phone_hash=$1 and direction='out'`, [phoneHash(P)]);
+  await runAlerts({ date: d3, hour: 8 });
+  const after = await one(`select count(*)::int as n from messages where phone_hash=$1 and direction='out'`, [phoneHash(P)]);
+  assert.equal(after.n, before.n);
+  const sub = await one('select skipped_window from subscriptions where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(sub.skipped_window, 1);
+});
+
+test('alertes : le dirigeant abonné garde ses commandes, STOP résilie', async () => {
+  const col = await one(`select * from collections where kind='alerts' limit 1`);
+  await say(OWNER, `Infos (${col.code})`);
+  await say(OWNER, 'oui');
+  await say(OWNER, 'Grands Montets');
+  await say(OWNER, 'les 3 prochains jours');
+  const sub = await one(`select * from subscriptions where phone_hash=$1 and state='active'`, [phoneHash(OWNER)]);
+  assert.equal(sub.days.length, 3);
+  await say(OWNER, 'Fais-moi le bilan de ma collecte');
+  assert.match(await lastOut(OWNER), /Bilan/);
+  await say(OWNER, 'Il y a des navettes entre les domaines ?');
+  assert.match(await lastOut(OWNER), /Données de démonstration/);
+  await say(OWNER, 'STOP');
+  assert.equal((await one('select state from subscriptions where id=$1', [sub.id])).state, 'opted_out');
+});
