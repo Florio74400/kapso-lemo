@@ -271,3 +271,18 @@ test('alertes : le dirigeant abonné garde ses commandes, STOP résilie', async 
   await say(OWNER, 'STOP');
   assert.equal((await one('select state from subscriptions where id=$1', [sub.id])).state, 'opted_out');
 });
+
+test('alertes : un retour spontané est enregistré comme retour, pas comme question', async () => {
+  const col = await one(`select * from collections where kind='alerts' limit 1`);
+  const P = '33687777777';
+  await say(P, `Infos (${col.code})`);
+  await say(P, 'oui');
+  await say(P, 'Grands Montets');
+  await say(P, 'demain');
+  const before = await one('select count(*)::int as n from feedbacks where collection_id=$1', [col.id]);
+  await say(P, "Beaucoup trop d'attente à Lognan ce matin, c'était vraiment pénible.", { audio: true });
+  const after = await one('select count(*)::int as n from feedbacks where collection_id=$1', [col.id]);
+  assert.equal(after.n, before.n + 1);
+  assert.match(await lastOut(P), /transmis à l'équipe/);
+  assert.equal(await one(`select 1 from questions where question like 'Beaucoup trop%'`), null);
+});

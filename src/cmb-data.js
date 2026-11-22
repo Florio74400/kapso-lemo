@@ -80,7 +80,7 @@ export function morningText(domainId, date) {
     `Météo : ${c.sky}, vent ${c.wind} km/h, ${c.tempBottom}°C en bas / ${c.tempTop}°C au sommet`,
     `Neige : ${c.snowTop} cm au sommet${c.freshSnow ? `, ${c.freshSnow} cm de fraîche` : ''}`,
     '',
-    'Une question sur votre journée ? Écrivez-la ici.',
+    'Une question, ou un retour sur votre journée ? Écrivez-le ici, à tout moment.',
     DEMO_NOTICE,
   ].join('\n');
 }

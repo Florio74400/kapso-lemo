@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound } from './conversation.js';
 import { sendTemplate } from './kapso.js';
-import { answerAlertQuestion } from './llm.js';
+import { answerAlertQuestion, analyzeFeedback } from './llm.js';
 import { DOMAINS, DEMO_NOTICE, domainById, matchDomain, morningText, contextFor, dateLabel } from './cmb-data.js';
 
 const YES_RE = /^\s*(oui|ok|okay|d'accord|daccord|j'accepte|jaccepte|go|yes|ouais|bien s[uû]r|avec plaisir)\b/i;
@@ -96,7 +96,7 @@ export async function startSubscription(msg, hash, col) {
   await reply(
     msg.phone,
     `Bonjour ! Je suis l'assistant de *${col.company_name}*.\n\n` +
-      `Je peux vous envoyer chaque matin vers ${MORNING_HOUR}h l'état des remontées de votre domaine, pour les jours de votre choix (${MAX_DAYS} jours maximum), et répondre à vos questions. ` +
+      `Je peux vous envoyer chaque matin vers ${MORNING_HOUR}h l'état des remontées de votre domaine, pour les jours de votre choix (${MAX_DAYS} jours maximum), répondre à vos questions et transmettre vos retours à l'équipe. ` +
       `Vers ${EOD_HOUR}h, je vous demanderai comment s'est passée votre journée.\n\n` +
       `Vos messages sont analysés par une IA pour améliorer le service. Votre numéro est effacé après votre dernier jour. Écrivez STOP à tout moment pour arrêter.\n\nAcceptez-vous ?`,
     { companyId: col.company_id, buttons: [{ id: 'alert_yes', title: "Oui, j'accepte" }, { id: 'alert_no', title: 'Non merci' }] },
@@ -146,7 +146,7 @@ export async function continueSetup(msg, hash, sub) {
       msg.phone,
       `C'est noté : *${domainById(sub.domain).name}*, ${days.map(dateLabel).join(', ')}.\n\n` +
         `Vous recevrez l'état des remontées vers ${MORNING_HOUR}h, et je vous demanderai vers ${EOD_HOUR}h comment s'est passée votre journée. ` +
-        `D'ici là, posez-moi vos questions ici. Pour modifier, scannez à nouveau le QR code.`,
+        `D'ici là, posez-moi vos questions ici. Et n'hésitez pas à nous faire un retour à tout moment, sur ce qui va comme sur ce qui ne va pas : tout est lu par l'équipe. Pour modifier, scannez à nouveau le QR code.`,
       opts,
     );
     return 'alerts_active';
@@ -169,14 +169,30 @@ export async function answerQuestion(msg, hash, sub) {
     res = await answerAlertQuestion({ question, context: contextFor(sub.domain, days), company: sub.company_name });
   } catch (err) {
     console.error('[ia] réponse question :', err.message);
-    res = { answer: 'Je ne peux pas répondre pour le moment. Renseignez-vous aux caisses du domaine.', topic: 'autre', answerable: false };
+    res = { kind: 'question', answer: 'Je ne peux pas répondre pour le moment. Renseignez-vous aux caisses du domaine.', topic: 'autre', answerable: false };
   }
+  await reply(msg.phone, res.kind === 'feedback' ? res.answer : `${res.answer}\n${DEMO_NOTICE}`, { companyId: sub.company_id });
+  // Un retour spontané est enregistré et analysé comme un retour client (émotion, irritants, urgence).
+  if (res.kind !== 'question') await saveSpontaneousFeedback(sub, hash, question, msg.kind === 'audio' ? question : null);
+  if (res.kind === 'feedback') return 'feedback_received';
   await query(
     `insert into questions (collection_id, subscription_id, phone_hash, domain, question, topic, answerable, answer, simulated) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
     [sub.collection_id, sub.id, hash, sub.domain, question, res.topic, res.answerable, res.answer, !config.anthropicApiKey],
   );
-  await reply(msg.phone, `${res.answer}\n${DEMO_NOTICE}`, { companyId: sub.company_id });
   return 'question_answered';
+}
+
+async function saveSpontaneousFeedback(sub, hash, text, transcript) {
+  try {
+    const analysis = await analyzeFeedback({ title: `${sub.title} (retour spontané)`, exchange: [{ role: 'client', text }] });
+    const s = await one(`insert into sessions (collection_id, phone_hash, state, completed_at) values ($1,$2,'done',now()) returning id`, [sub.collection_id, hash]);
+    await query(
+      `insert into feedbacks (session_id, collection_id, verbatim, transcript, analysis, emotion, sentiment, urgency, simulated) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [s.id, sub.collection_id, text, transcript, JSON.stringify(analysis), analysis.emotion, analysis.tone, analysis.urgency, !config.anthropicApiKey],
+    );
+  } catch (err) {
+    console.error('[ia] retour spontané :', err.message);
+  }
 }
 
 // ---------- Envois programmés ----------

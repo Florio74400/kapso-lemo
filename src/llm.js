@@ -198,6 +198,7 @@ function simSynthesis(analyses) {
 export const TOPICS = ['ouverture_remontees', 'horaires', 'meteo_neige', 'forfaits_tarifs', 'acces_parking_navettes', 'securite', 'restauration_services', 'autre'];
 
 export const AlertAnswer = z.object({
+  kind: z.enum(['question', 'feedback', 'both']).describe("question : il demande une info. feedback : il donne son avis ou raconte son expérience. both : les deux."),
   answer: z.string().describe('Réponse courte (600 caractères max), utile, en français, sans inventer.'),
   topic: z.enum(TOPICS),
   answerable: z.boolean().describe("true seulement si le contexte contenait l'information demandée."),
@@ -208,8 +209,11 @@ export async function answerAlertQuestion({ question, context, company }) {
   return structured(
     AlertAnswer,
     `Tu es l'assistant WhatsApp de ${company} pour les skieurs abonnés aux alertes remontées.
-Réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas (tarif, événement, restaurant, etc.), dis-le simplement et conseille de se renseigner aux caisses, et mets answerable=false.
-Réponse brève, chaleureuse, pratique. Pas de titre, pas de liste longue. Classe aussi la question dans un thème.
+Le skieur peut poser une question, donner un retour sur son expérience (avis, plainte, compliment, suggestion), ou les deux. Indique lequel dans "kind".
+- Retour : remercie sincèrement, montre que tu as compris le point principal, et précise qu'il est bien transmis à l'équipe (c'est vrai : tous les retours sont analysés et remontés). Ne dis jamais que tu ne peux pas transmettre. Pas de promesse d'action précise.
+- Question : réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas (tarif, niveau des pistes, événement, restaurant, etc.), dis-le simplement et conseille de se renseigner aux caisses, et mets answerable=false.
+- Pour un retour sans question, answerable=true.
+Réponse brève, chaleureuse, pratique. Pas de titre, pas de liste longue. Classe aussi le message dans un thème.
 ${GROUNDING}`,
     `<contexte>\n${context}\n</contexte>\n<question_skieur>${question}</question_skieur>`,
   );
@@ -217,6 +221,9 @@ ${GROUNDING}`,
 
 function simAnswer(question, context) {
   const t = norm(question);
+  const isQuestion = /\?|est-ce|quel|quand|combien|ou |comment|y a-t-il|il y a/.test(t);
+  const isFeedback = /trop|attente|super|genial|nul|decu|bravo|merci|sale|froid|cher|dommage|top/.test(t) && !/\?$/.test(question.trim());
+  if (isFeedback && !isQuestion) return { kind: 'feedback', answer: "Merci pour votre retour, il est bien transmis à l'équipe !", topic: 'autre', answerable: true };
   const topic = /ouvert|ferme|remont|telecabine|telesiege|telepherique/.test(t)
     ? 'ouverture_remontees'
     : /heure|horaire/.test(t)
@@ -229,8 +236,8 @@ function simAnswer(question, context) {
             ? 'acces_parking_navettes'
             : 'autre';
   if (topic === 'forfaits_tarifs' || topic === 'autre') {
-    return { answer: "Je n'ai pas cette information. Le plus simple est de vous renseigner aux caisses du domaine.", topic, answerable: false };
+    return { kind: 'question', answer: "Je n'ai pas cette information. Le plus simple est de vous renseigner aux caisses du domaine.", topic, answerable: false };
   }
   const line = context.split('\n').find((l) => /^Domaine de l'abonné/.test(l));
-  return { answer: `Voici ce que j'ai : consultez le message du matin pour le détail. ${line || ''}`.trim(), topic, answerable: true };
+  return { kind: 'question', answer: `Voici ce que j'ai : consultez le message du matin pour le détail. ${line || ''}`.trim(), topic, answerable: true };
 }
