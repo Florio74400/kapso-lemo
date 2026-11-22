@@ -1,7 +1,8 @@
 // Configuration lue uniquement depuis les variables d'environnement (jamais de secret dans le code).
 import crypto from 'node:crypto';
 
-const env = process.env;
+// Valeurs nettoyées des espaces et retours à la ligne parasites (copier-coller).
+const env = Object.fromEntries(Object.entries(process.env).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]));
 
 function list(v) {
   return (v || '').split(',').map((s) => s.replace(/[^0-9]/g, '')).filter(Boolean);
