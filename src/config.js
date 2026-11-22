@@ -32,8 +32,8 @@ export const config = {
   // Garde-fou phase de test : si rempli, LEMO ne répond qu'à ces numéros.
   allowedNumbers: list(env.ALLOWED_TEST_NUMBERS),
 
-  // Mode démo : simulateur de conversations dans le navigateur, sans WhatsApp.
-  demoMode: env.DEMO_MODE === 'true' || !env.KAPSO_API_KEY,
+  // Mode démo : simulateur + compte de démo. À n'activer qu'en local, jamais en ligne.
+  demoMode: env.DEMO_MODE === 'true',
 };
 
 if (!config.appSecret) {
