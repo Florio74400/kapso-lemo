@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
 process.env.LOCAL_DB_PATH = 'memory://';
-process.env.KAPSO_WEBHOOK_SECRET = 'test-secret';
-process.env.APP_SECRET = 'test-app-secret';
+process.env.KAPSO_WEBHOOK_SECRET = 'test-secret-0123456789abcdef0123456789';
+process.env.APP_SECRET = 'test-app-secret-0123456789abcdef0123456789';
 process.env.DEMO_MODE = 'true';
 delete process.env.KAPSO_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;

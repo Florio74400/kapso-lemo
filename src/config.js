@@ -41,6 +41,9 @@ if (!config.appSecret) {
   if (!config.demoMode) throw new Error('APP_SECRET manquant (voir .env.example)');
   config.appSecret = crypto.randomBytes(32).toString('hex');
 }
+for (const [name, value] of [['APP_SECRET', config.appSecret], ['KAPSO_WEBHOOK_SECRET', config.kapsoWebhookSecret]]) {
+  if (value && (value.length < 32 || value.includes('${{'))) throw new Error(`${name} trop court ou non généré (32 caractères minimum)`);
+}
 
 export const llmMode = () => (config.anthropicApiKey ? 'claude' : 'simulated');
 export const kapsoLive = () => Boolean(config.kapsoApiKey && config.kapsoPhoneNumberId);
