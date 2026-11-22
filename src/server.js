@@ -240,12 +240,31 @@ export function fakeInbound({ phone, text, audio = false, buttonId = null }) {
   return { message, conversation: { id: `conv_${phone}`, phone_number: phone, phone_number_id: config.kapsoPhoneNumberId || 'demo' }, is_new_conversation: false, phone_number_id: config.kapsoPhoneNumberId || 'demo' };
 }
 
+// Création du premier compte entreprise depuis les variables d'environnement
+// (ADMIN_EMAIL, ADMIN_PASSWORD, COMPANY_NAME, OWNER_PHONE). Sans effet si le compte existe déjà.
+async function bootstrapAdmin() {
+  const email = (process.env.ADMIN_EMAIL || '').trim();
+  const password = (process.env.ADMIN_PASSWORD || '').trim();
+  if (!email || !password) return;
+  if (password.length < 10) return console.error('[admin] ADMIN_PASSWORD trop court (10 caractères minimum), compte non créé');
+  if (await one('select 1 from companies where lower(admin_email)=lower($1)', [email])) return;
+  const phones = (process.env.OWNER_PHONE || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter(Boolean);
+  await query(`insert into companies (name, admin_email, admin_password_hash, owner_phones) values ($1,$2,$3,$4)`, [
+    (process.env.COMPANY_NAME || 'Mon entreprise').trim(),
+    email,
+    hashPassword(password),
+    phones,
+  ]);
+  console.log('[admin] compte entreprise créé');
+}
+
 export async function start() {
   await initDb();
   if (config.demoMode) {
     const { seedDemo } = await import('../scripts/seed-demo.js');
     await seedDemo();
   }
+  await bootstrapAdmin();
   // reprise des webhooks enregistrés mais non traités (ex : redémarrage)
   for (const e of await query(`select id, payload from webhook_events where status='pending' order by created_at`)) {
     const p = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
