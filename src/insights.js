@@ -2,7 +2,7 @@
 // On rassemble les données de l'entreprise sur la période (retours analysés, questions des clients, infos du jour),
 // puis Claude répond uniquement à partir de ces données. Aucun numéro de téléphone n'est transmis.
 import { query } from './db.js';
-import { answerDataQuestion } from './llm.js';
+import { answerDataQuestion, ANSWER_MAX_WORDS } from './llm.js';
 import { getConfig, choiceLabel } from './optins.js';
 import { parisNow, addDays } from './alerts.js';
 
@@ -95,5 +95,23 @@ export async function answerForManager({ company, question, period }) {
     respondents: data.feedbackCount,
     threshold: company.privacy_threshold,
   });
-  return `${res.answer}\n\n_Base : ${data.feedbackCount} retour(s) et ${data.questionCount} question(s) ${data.label}._`;
+  // Citations : seulement au-dessus du seuil, et seulement si elles existent mot pour mot dans les verbatims.
+  const flat = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[«»"“”'’]/g, '').replace(/\s+/g, ' ').trim();
+  const corpus = flat(data.text);
+  const quotes =
+    data.feedbackCount >= company.privacy_threshold
+      ? (res.quotes || []).filter((q) => q.text && corpus.includes(flat(q.text))).slice(0, 2)
+      : [];
+  const body = capWords(res.answer, ANSWER_MAX_WORDS + 15);
+  const refs = quotes.map((q) => `« ${q.text.trim()} »\n_${q.where}_`).join('\n\n');
+  return `${body}${refs ? `\n\n${refs}` : ''}\n\n_${data.feedbackCount} retour(s), ${data.questionCount} question(s) · ${data.label}_`;
+}
+
+// Garde-fou de longueur : coupe à la dernière phrase complète sous la limite.
+function capWords(text, max) {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= max) return text.trim();
+  const cut = words.slice(0, max).join(' ');
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'));
+  return end > 0 ? cut.slice(0, end + 1) : `${cut}…`;
 }

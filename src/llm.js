@@ -223,7 +223,7 @@ La personne peut poser une question, donner un retour sur son expérience (avis,
 - Retour : remercie sincèrement, montre que tu as compris le point principal, et précise qu'il est bien transmis à l'équipe (c'est vrai : tous les retours sont analysés et remontés). Ne dis jamais que tu ne peux pas transmettre. Pas de promesse d'action précise.
 - Question : réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas, dis-le simplement et conseille de ${fallback}, et mets answerable=false. Si l'info vient de l'équipe, tu peux le préciser.
 - Pour un retour sans question, answerable=true.
-Réponse brève, chaleureuse, pratique. Pas de titre, pas de liste longue. Classe aussi le message dans un thème.
+Réponse de 60 mots maximum, registre premium : vouvoiement, ton sobre et chaleureux, précis. Pas d'emoji, pas de point d'exclamation, pas de titre ni de liste, pas de question en retour. Seule exception à « ne rien proposer » : quand l'info manque, la consigne de repli ci-dessus. Classe aussi le message dans un thème.
 ${GROUNDING}`,
     `<contexte>\n${context}\n</contexte>\n<message>${question}</message>`,
   );
@@ -255,24 +255,38 @@ function simAnswer(question, context, topics = TOPICS) {
 
 
 // ================= Questions de la direction sur les données =================
+export const ANSWER_MAX_WORDS = 80;
 export const DataAnswer = z.object({
-  answer: z.string().describe('Réponse WhatsApp, 900 caractères maximum, directe, avec les chiffres utiles.'),
+  answer: z.string().describe(`Réponse WhatsApp de ${ANSWER_MAX_WORDS} mots maximum, sans les citations.`),
+  quotes: z
+    .array(z.object({ text: z.string().describe('Extrait COPIÉ MOT POUR MOT d’un verbatim fourni, 20 mots maximum.'), where: z.string().describe('Lieu et moment, ex : « Flégère, 23/11 9h30 ».') }))
+    .describe('0 à 2 verbatims de référence, les plus parlants.'),
   items_used: z.number().int().describe('Nombre de retours ou questions sur lesquels repose la réponse.'),
 });
 
 export async function answerDataQuestion({ question, company, periodLabel, data, respondents, threshold }) {
   if (llmMode() === 'simulated') return simDataAnswer(data, periodLabel);
+  const canQuote = respondents >= threshold;
   return structured(
     DataAnswer,
-    `Tu es LEMO, l'analyste expérience client de ${company}. Un responsable de l'entreprise te pose une question sur WhatsApp, souvent en réunion : réponds vite et juste.
-Tu reçois les données de la période (${periodLabel}) : retours clients analysés, questions posées par les clients, infos du jour de l'équipe.
-- Réponds UNIQUEMENT à partir de ces données. Si rien ne correspond (lieu, période, sujet), dis-le clairement, sans extrapoler.
-- Commence par la réponse directe, puis 2 à 4 éléments concrets (lieu, heure, nombre de retours, émotion dominante). Signale d'abord ce qui est urgent.
-- Donne des ordres de grandeur honnêtes : "3 retours sur 12", pas "beaucoup".
-- Confidentialité : reformule toujours. ${respondents >= threshold ? 'Tu peux citer de très courts extraits anonymes si cela éclaire.' : `Moins de ${threshold} répondants dans le périmètre : aucune citation, uniquement des tendances reformulées.`} Jamais de nom, numéro, chambre ou détail permettant d'identifier un client.
-- Style WhatsApp : phrases courtes, *gras* avec des astérisques au besoin, pas de titres.
+    `Tu es LEMO, l'analyste expérience client de ${company}. Un dirigeant t'interroge sur WhatsApp, souvent en réunion.
+Données de la période (${periodLabel}) : retours clients analysés, questions posées par les clients, infos du jour de l'équipe.
+
+Fond :
+- Réponds UNIQUEMENT à partir de ces données. Si rien ne correspond (lieu, période, sujet), dis-le en une phrase, sans extrapoler.
+- La réponse directe d'abord, puis l'essentiel : ce qui est urgent, le lieu, le moment, le nombre de retours concernés ("3 retours sur 12").
+- Constate, n'oriente pas : aucune recommandation, aucun conseil, aucune proposition, aucune question en retour.
+
+Forme (registre premium) :
+- ${ANSWER_MAX_WORDS} mots maximum dans "answer". Phrases courtes et denses. Chaque mot compte.
+- Vouvoiement, ton sobre et précis, comme une note de direction. Pas d'emoji, pas de point d'exclamation, pas de formule de politesse ni d'introduction ("Bonjour", "Voici...").
+- *Gras* WhatsApp avec astérisques pour 1 ou 2 éléments clés au plus. Pas de titres, pas de listes.
+
+Verbatims :
+- ${canQuote ? 'Dans "quotes", 1 à 2 extraits de verbatims qui illustrent le mieux la réponse, copiés MOT POUR MOT (20 mots maximum chacun), avec lieu et moment.' : `Moins de ${threshold} répondants dans le périmètre : "quotes" doit rester vide (confidentialité).`}
+- Jamais de nom, numéro, chambre ou détail permettant d'identifier un client.
 ${GROUNDING}`,
-    `<donnees>\n${data}\n</donnees>\n<question_responsable>${question}</question_responsable>`,
+    `<donnees>\n${data}\n</donnees>\n<question_dirigeant>${question}</question_dirigeant>`,
     'medium',
   );
 }
@@ -284,6 +298,7 @@ function simDataAnswer(data, periodLabel) {
     answer: lines.length
       ? `${lines.length} retour(s) ${periodLabel}. Irritants relevés : ${irritants.slice(0, 3).join(' ; ') || 'aucun'}.`
       : `Aucun retour client ${periodLabel}.`,
+    quotes: [],
     items_used: lines.length,
   };
 }

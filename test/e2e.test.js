@@ -329,7 +329,7 @@ test('direction : un lecteur interroge les retours par WhatsApp, sans pouvoir cr
   await say(READER, "Est-ce qu'il y a eu des problèmes aujourd'hui à la Flégère ?");
   const out = await lastOut(READER);
   assert.match(out, /retour/);
-  assert.match(out, /Base : \d+ retour/);
+  assert.match(out, /\d+ retour\(s\), \d+ question\(s\) · /);
   assert.doesNotMatch(out, /336\d{8}/, 'aucun numéro de téléphone');
   await say(READER, 'Je veux savoir ce que mes clients ont pensé du restaurant');
   assert.match(await lastOut(READER), /réservée au dirigeant/);
@@ -345,7 +345,7 @@ test('dirigeant abonné : les questions sur les retours vont à l’analyse, les
   await say(OWNER, 'Grands Montets');
   await say(OWNER, 'demain');
   await say(OWNER, "Est-ce qu'il y a eu des problèmes signalés cette semaine ?");
-  assert.match(await lastOut(OWNER), /Base : \d+ retour/);
+  assert.match(await lastOut(OWNER), /\d+ retour\(s\), \d+ question\(s\) · /);
   await say(OWNER, 'Il y a des navettes entre les domaines ?');
   assert.match(await lastOut(OWNER), /Données de démonstration/);
 });
