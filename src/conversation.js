@@ -7,6 +7,7 @@ import { sendText, sendButtons, sendList } from './kapso.js';
 import * as alerts from './alerts.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
+import { answerForManager } from './insights.js';
 
 export const CODE_RE = /LEMO-[A-HJ-NP-Z2-9]{4}/i;
 const STOP_RE = /^\s*(stop|arret|arrêt|desabonner|désabonner|desinscription|désinscription|unsubscribe)\s*[.!]?\s*$/i;
@@ -113,7 +114,11 @@ async function route(msg) {
   if (sub && sub.state !== 'active') return alerts.continueSetup(msg, hash, sub);
 
   // 5. Dirigeant (s'il est aussi abonné, seules ses demandes de dirigeant lui sont réservées)
-  const company = await one('select * from companies where $1 = any(owner_phones) limit 1', [msg.phone]);
+  // Dirigeant (owner_phones) ou lecteur (reader_phones : direction, marketing... lecture seule)
+  const company = await one(
+    `select *, ($1 = any(owner_phones)) as is_owner from companies where $1 = any(owner_phones) or $1 = any(reader_phones) limit 1`,
+    [msg.phone],
+  );
   if (company) {
     if (!sub) return ownerMessage(msg, company);
     const intent = await classifyOwnerMessage((msg.kind === 'audio' ? msg.transcript : msg.body) || '').catch(() => null);
@@ -307,6 +312,24 @@ async function ownerMessage(msg, company, knownIntent = null) {
     return 'owner_error';
   }
 
+  // Question libre sur les données ("Y a-t-il eu des problèmes aujourd'hui à la Flégère ?")
+  if (intent.intent === 'ask_data' || (intent.intent === 'other' && /\?/.test(text))) {
+    let answer;
+    try {
+      answer = await answerForManager({ company, question: text, period: intent.period });
+    } catch (err) {
+      console.error('[ia] question direction :', err.message);
+      answer = 'Je ne peux pas analyser les données pour le moment. Réessayez dans un instant.';
+    }
+    await reply(msg.phone, answer, { companyId: company.id });
+    return 'data_answered';
+  }
+
+  if (intent.intent === 'create_collection' && !company.is_owner) {
+    await reply(msg.phone, 'La création de collectes est réservée au dirigeant. Vous pouvez en revanche me poser toutes vos questions sur les retours clients.', { companyId: company.id });
+    return 'reader_forbidden';
+  }
+
   if (intent.intent === 'create_collection' && intent.collection_title && intent.collection_question) {
     const col = await createCollection(company.id, intent.collection_title, intent.collection_question);
     await reply(
@@ -346,7 +369,8 @@ async function ownerMessage(msg, company, knownIntent = null) {
 
   await reply(
     msg.phone,
-    "Je peux :\n- créer une collecte : « Je veux savoir ce que mes clients ont pensé de leur séjour »\n- faire le bilan : « Fais-moi le bilan de ma collecte »\n- lister vos collectes : « Mes collectes »",
+    (company.is_owner ? "Je peux :\n- créer une collecte : « Je veux savoir ce que mes clients ont pensé de leur séjour »\n" : 'Je peux :\n') +
+      "- répondre à vos questions sur les retours : « Y a-t-il eu des problèmes aujourd'hui à la Flégère ? »\n- faire le bilan : « Fais-moi le bilan de ma collecte »\n- lister vos collectes : « Mes collectes »",
     { companyId: company.id },
   );
   return 'owner_help';

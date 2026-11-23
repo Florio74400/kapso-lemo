@@ -8,7 +8,8 @@ import { config, llmMode } from './config.js';
 export const EMOTIONS = ['joie', 'satisfaction', 'gratitude', 'surprise', 'neutre', 'deception', 'frustration', 'colere', 'inquietude', 'tristesse'];
 
 export const OwnerIntent = z.object({
-  intent: z.enum(['create_collection', 'report', 'list', 'help', 'other']),
+  intent: z.enum(['create_collection', 'report', 'ask_data', 'list', 'help', 'other']),
+  period: z.enum(['today', 'yesterday', '7d', '30d', 'all']).nullable().describe("Pour ask_data : période visée. Par défaut '7d'."),
   collection_title: z.string().nullable().describe("Sujet court, ex: 'votre séjour'. Seulement pour create_collection."),
   collection_question: z.string().nullable().describe('Question ouverte, chaleureuse, une seule phrase. Seulement pour create_collection.'),
   collection_code: z.string().nullable().describe('Code LEMO-XXXX cité par le dirigeant, sinon null.'),
@@ -70,7 +71,8 @@ export async function classifyOwnerMessage(text) {
     `Tu es LEMO, assistant qui aide un dirigeant à collecter les retours de ses clients sur WhatsApp.
 Classe sa demande :
 - create_collection : il veut recueillir l'avis/ressenti de ses clients sur quelque chose. Déduis un sujet court et formule UNE question ouverte, simple, qui invite à raconter son ressenti (pas de question fermée, pas de note sur 10).
-- report : il veut le bilan / la synthèse / les résultats d'une collecte.
+- report : il veut le bilan / la synthèse globale d'une collecte.
+- ask_data : il pose une question précise sur ce que vivent ou disent les clients (problèmes, lieux, émotions, tendances, questions posées, comparaison de jours). Indique la période.
 - list : il veut voir ses collectes.
 - help : il demande comment ça marche.
 - other : le reste.
@@ -128,15 +130,20 @@ const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
 function simOwner(text) {
   const t = norm(text);
   const code = (text.match(/LEMO-[A-Z0-9]{4}/i) || [null])[0];
-  if (/bilan|synthese|resultat|resume/.test(t)) return { intent: 'report', collection_title: null, collection_question: null, collection_code: code?.toUpperCase() || null };
-  if (/liste|mes collectes/.test(t)) return { intent: 'list', collection_title: null, collection_question: null, collection_code: null };
-  if (/aide|comment ca marche|help/.test(t)) return { intent: 'help', collection_title: null, collection_question: null, collection_code: null };
+  const base = { period: null, collection_title: null, collection_question: null, collection_code: null };
+  if (/bilan|synthese|resultat|resume/.test(t)) return { ...base, intent: 'report', collection_code: code?.toUpperCase() || null };
+  if (/\?/.test(text) || /^(est-ce|y a-t-il|quel|quels|quelles|combien|qu'est-ce)/.test(t)) {
+    const period = /aujourd/.test(t) ? 'today' : /hier/.test(t) ? 'yesterday' : /mois/.test(t) ? '30d' : '7d';
+    return { ...base, intent: 'ask_data', period };
+  }
+  if (/liste|mes collectes/.test(t)) return { intent: 'list', period: null, collection_title: null, collection_question: null, collection_code: null };
+  if (/aide|comment ca marche|help/.test(t)) return { intent: 'help', period: null, collection_title: null, collection_question: null, collection_code: null };
   if (/savoir|avis|pense|retour|ressenti|collect/.test(t)) {
     const m = text.match(/(?:de|du|sur) (leur|la|le|les|son|sa|ses|notre|nos) ([^.?!,]+)/i);
     const subject = m ? `votre ${m[2].trim()}` : 'votre expérience';
-    return { intent: 'create_collection', collection_title: subject, collection_question: `Comment avez-vous vécu ${subject} ? Racontez-nous librement, par écrit ou en vocal.`, collection_code: null };
+    return { intent: 'create_collection', period: null, collection_title: subject, collection_question: `Comment avez-vous vécu ${subject} ? Racontez-nous librement, par écrit ou en vocal.`, collection_code: null };
   }
-  return { intent: 'other', collection_title: null, collection_question: null, collection_code: null };
+  return { intent: 'other', period: null, collection_title: null, collection_question: null, collection_code: null };
 }
 
 function simFollowup(answer) {
@@ -243,4 +250,39 @@ function simAnswer(question, context, topics = TOPICS) {
   }
   const line = context.split('\n').find((l) => /^Domaine de l'abonné/.test(l));
   return { kind: 'question', answer: `Voici ce que j'ai : consultez le message du matin pour le détail. ${line || ''}`.trim(), topic, answerable: true };
+}
+
+
+// ================= Questions de la direction sur les données =================
+export const DataAnswer = z.object({
+  answer: z.string().describe('Réponse WhatsApp, 900 caractères maximum, directe, avec les chiffres utiles.'),
+  items_used: z.number().int().describe('Nombre de retours ou questions sur lesquels repose la réponse.'),
+});
+
+export async function answerDataQuestion({ question, company, periodLabel, data, respondents, threshold }) {
+  if (llmMode() === 'simulated') return simDataAnswer(data, periodLabel);
+  return structured(
+    DataAnswer,
+    `Tu es LEMO, l'analyste expérience client de ${company}. Un responsable de l'entreprise te pose une question sur WhatsApp, souvent en réunion : réponds vite et juste.
+Tu reçois les données de la période (${periodLabel}) : retours clients analysés, questions posées par les clients, infos du jour de l'équipe.
+- Réponds UNIQUEMENT à partir de ces données. Si rien ne correspond (lieu, période, sujet), dis-le clairement, sans extrapoler.
+- Commence par la réponse directe, puis 2 à 4 éléments concrets (lieu, heure, nombre de retours, émotion dominante). Signale d'abord ce qui est urgent.
+- Donne des ordres de grandeur honnêtes : "3 retours sur 12", pas "beaucoup".
+- Confidentialité : reformule toujours. ${respondents >= threshold ? 'Tu peux citer de très courts extraits anonymes si cela éclaire.' : `Moins de ${threshold} répondants dans le périmètre : aucune citation, uniquement des tendances reformulées.`} Jamais de nom, numéro, chambre ou détail permettant d'identifier un client.
+- Style WhatsApp : phrases courtes, *gras* avec des astérisques au besoin, pas de titres.
+${GROUNDING}`,
+    `<donnees>\n${data}\n</donnees>\n<question_responsable>${question}</question_responsable>`,
+    'medium',
+  );
+}
+
+function simDataAnswer(data, periodLabel) {
+  const lines = data.split('\n').filter((l) => l.startsWith('[retour'));
+  const irritants = lines.map((l) => l.match(/irritants : ([^|]+)/)?.[1]?.trim()).filter((x) => x && x !== '-');
+  return {
+    answer: lines.length
+      ? `${lines.length} retour(s) ${periodLabel}. Irritants relevés : ${irritants.slice(0, 3).join(' ; ') || 'aucun'}.`
+      : `Aucun retour client ${periodLabel}.`,
+    items_used: lines.length,
+  };
 }

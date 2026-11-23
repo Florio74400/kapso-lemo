@@ -223,7 +223,8 @@ export function createApp() {
     const phones = String(req.body.owner_phones || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter((p) => p.length >= 8);
     const threshold = Math.min(100, Math.max(1, Number(req.body.privacy_threshold) || 5));
     const retention = Math.min(730, Math.max(1, Number(req.body.retention_days) || 90));
-    await query('update companies set owner_phones=$2, privacy_threshold=$3, retention_days=$4 where id=$1', [req.company.id, phones, threshold, retention]);
+    const readers = String(req.body.reader_phones || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter((p) => p.length >= 8);
+    await query('update companies set owner_phones=$2, privacy_threshold=$3, retention_days=$4, reader_phones=$5 where id=$1', [req.company.id, phones, threshold, retention, readers]);
     res.redirect('/settings?saved=1');
   });
 

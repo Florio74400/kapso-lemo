@@ -147,6 +147,9 @@ export function settingsPage({ company, saved }) {
 <label>Numéros WhatsApp des dirigeants (format international, séparés par des virgules)</label>
 <input name="owner_phones" value="${esc(company.owner_phones.join(', '))}" placeholder="33612345678">
 <p class="mute">Ces numéros peuvent créer des collectes et demander un bilan en écrivant à LEMO.</p>
+<label>Lecteurs : direction, marketing, exploitation (format international, séparés par des virgules)</label>
+<input name="reader_phones" value="${esc((company.reader_phones || []).join(', '))}" placeholder="33611223344">
+<p class="mute">Ces numéros peuvent interroger les retours clients sur WhatsApp (« Y a-t-il eu des problèmes aujourd'hui à la Flégère ? ») et demander un bilan, sans pouvoir créer de collecte.</p>
 <label>Seuil de confidentialité (répondants minimum avant synthèse)</label><input name="privacy_threshold" type="number" min="1" max="100" value="${company.privacy_threshold}">
 <label>Conservation des retours (jours)</label><input name="retention_days" type="number" min="1" max="730" value="${company.retention_days}">
 <p><button>Enregistrer</button></p></form>`;

@@ -322,3 +322,18 @@ test('lien d’inscription configurable : ATMB, 3 questions au départ, infos du
   await runAlerts({ date: d1, hour: 18 });
   assert.match(await lastOut(P), /Comment s'est passé votre trajet/);
 });
+
+test('direction : un lecteur interroge les retours par WhatsApp, sans pouvoir créer de collecte', async () => {
+  const READER = '33612121212';
+  await query('update companies set reader_phones=$2 where id=$1', [company.id, [READER]]);
+  await say(READER, "Est-ce qu'il y a eu des problèmes aujourd'hui à la Flégère ?");
+  const out = await lastOut(READER);
+  assert.match(out, /retour/);
+  assert.match(out, /Base : \d+ retour/);
+  assert.doesNotMatch(out, /336\d{8}/, 'aucun numéro de téléphone');
+  await say(READER, 'Je veux savoir ce que mes clients ont pensé du restaurant');
+  assert.match(await lastOut(READER), /réservée au dirigeant/);
+  const { gatherData } = await import('../src/insights.js');
+  const d = await gatherData(company.id, 'today');
+  assert.ok(d.text.includes('Brévent – Flégère'), 'les retours sont rattachés au domaine choisi');
+});
