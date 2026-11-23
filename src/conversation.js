@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { config, llmMode } from './config.js';
 import { query, one } from './db.js';
-import { sendText, sendButtons, sendList } from './kapso.js';
+import { sendText, sendButtons, sendList, showTyping, sendReaction } from './kapso.js';
 import * as alerts from './alerts.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
@@ -78,7 +78,31 @@ export async function handleInbound(msg) {
     const seen = await one('select 1 from messages where wa_message_id = $1', [msg.waMessageId]);
     if (seen) return 'ignored:duplicate';
   }
+  acknowledge(msg); // réaction + « en train d'écrire », sans attendre
   return enqueue(phoneHash(msg.phone), () => route(msg));
+}
+
+// Choix de la réaction selon le contenu (mots-clés, instantané, sans IA).
+// Un message négatif reçoit une réaction d'écoute, jamais un sourire.
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export function reactionFor(text) {
+  const t = norm(text);
+  if (!t.trim()) return '👍';
+  if (/probleme|panne|attente|queue|bloque|colere|inadmissible|decu|deception|nul|scandale|dangereux|peur|malaise|ferme|arrete|pas content|dommage|gache|bouscul|accident|blesse/.test(t)) return '🙏';
+  if (/neige|poudreuse|flocon|enneige/.test(t)) return '❄️';
+  if (/soleil|grand beau|ciel bleu|ensoleille/.test(t)) return '☀️';
+  if (/vent|tempete|rafale/.test(t)) return '🌬️';
+  if (/\bski|piste|glisse|schuss/.test(t)) return '⛷️';
+  if (/merci|bravo|genial|super|top|parfait|magnifique|incroyable|adore|excellent|trop bien|content/.test(t)) return '😊';
+  return '👍';
+}
+
+function acknowledge(msg) {
+  if (!msg.waMessageId) return;
+  const text = msg.kind === 'audio' ? msg.transcript : msg.body;
+  if (msg.kind === 'text' && STOP_RE.test((text || '').trim())) return; // pas de réaction à un désabonnement
+  showTyping(msg.waMessageId).catch((e) => console.error('[kapso] indicateur de saisie :', e.message));
+  sendReaction(msg.phone, msg.waMessageId, reactionFor(text)).catch((e) => console.error('[kapso] réaction :', e.message));
 }
 
 async function route(msg) {

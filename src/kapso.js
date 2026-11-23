@@ -73,6 +73,24 @@ export async function sendTemplate(to, name, params, language = 'fr') {
   });
 }
 
+// Marque le message comme lu et affiche « en train d'écrire » (disparaît à l'envoi de la réponse ou après ~25 s).
+export async function showTyping(messageId) {
+  if (!kapsoLive() || !messageId) return { simulated: true };
+  const res = await fetch(`${config.kapsoBaseUrl}/${config.kapsoPhoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { 'X-API-Key': config.kapsoApiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: messageId, typing_indicator: { type: 'text' } }),
+  });
+  if (!res.ok) throw new Error(`Kapso ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json();
+}
+
+// Réaction emoji sur un message reçu (gratuite côté Meta).
+export async function sendReaction(to, messageId, emoji) {
+  if (!kapsoLive() || !messageId) return { simulated: true };
+  return post({ to, type: 'reaction', reaction: { message_id: messageId, emoji } });
+}
+
 // Extrait les messages d'un payload webhook Kapso v2 (simple ou groupé).
 export function extractMessages(payload) {
   const items = payload?.batch && Array.isArray(payload.data) ? payload.data : [payload];

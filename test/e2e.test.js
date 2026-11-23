@@ -349,3 +349,13 @@ test('dirigeant abonné : les questions sur les retours vont à l’analyse, les
   await say(OWNER, 'Il y a des navettes entre les domaines ?');
   assert.match(await lastOut(OWNER), /Données de démonstration/);
 });
+
+test('réactions : emoji adapté au contenu, jamais de sourire sur un problème', async () => {
+  const { reactionFor } = await import('../src/conversation.js');
+  assert.equal(reactionFor('Quelle neige ce matin, de la poudreuse partout'), '❄️');
+  assert.equal(reactionFor('Pas de neige et une attente énorme, très déçu'), '🙏');
+  assert.equal(reactionFor('Merci pour tout, super journée'), '😊');
+  assert.equal(reactionFor('Grand beau sur les pistes'), '☀️');
+  assert.equal(reactionFor('Le téléphérique est fermé à cause du vent ?'), '🙏');
+  assert.equal(reactionFor('Bonjour'), '👍');
+});
