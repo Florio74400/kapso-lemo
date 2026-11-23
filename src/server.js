@@ -291,6 +291,10 @@ export async function start() {
     await seedDemo();
   }
   await bootstrapAdmin();
+  if (process.env.DEMO_VERBATIMS_FOR) {
+    const { seedDemoVerbatims } = await import('../scripts/demo-verbatims/index.js');
+    await seedDemoVerbatims(process.env.DEMO_VERBATIMS_FOR).catch((e) => console.error('[démo] chargement :', e.message));
+  }
   // reprise des webhooks enregistrés mais non traités (ex : redémarrage)
   for (const e of await query(`select id, payload from webhook_events where status='pending' order by created_at`)) {
     const p = typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload;
