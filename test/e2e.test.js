@@ -286,3 +286,39 @@ test('alertes : un retour spontané est enregistré comme retour, pas comme ques
   assert.match(await lastOut(P), /transmis à l'équipe/);
   assert.equal(await one(`select 1 from questions where question like 'Beaucoup trop%'`), null);
 });
+
+test('lien d’inscription configurable : ATMB, 3 questions au départ, infos du jour', async () => {
+  const { presetConfig } = await import('../src/optins.js');
+  const { addDailyInfo } = await import('../src/alerts.js');
+  const cfg = presetConfig('atmb_trafic');
+  const col = await createCollection(company.id, cfg.title, cfg.eod_question, 'alerts', cfg);
+  const P = '33686666666';
+  const d1 = addDays(parisNow().date, 1);
+
+  await say(P, `Bonjour, je veux recevoir les infos (${col.code})`);
+  assert.match(await lastOut(P), /info trafic.*Acceptez-vous/s);
+  await say(P, 'oui');
+  assert.match(await lastOut(P), /Quel itinéraire/);
+  await deliver(fakeInbound({ phone: P, text: 'Tunnel du Mont-Blanc', buttonId: 'opt:tunnel' }));
+  assert.match(await lastOut(P), /Quelles infos.*1\. Fermetures/s);
+  await say(P, '1 et 2');
+  assert.match(await lastOut(P), /Pour quels jours/);
+  await say(P, 'demain');
+  const sub = await one('select * from subscriptions where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(sub.state, 'active');
+  assert.deepEqual(sub.choices, { route: 'tunnel', alerts: ['fermetures', 'attente'], days: [d1] });
+  assert.match(await lastOut(P), /Tunnel du Mont-Blanc · Fermetures et coupures, Temps d'attente/);
+
+  await addDailyInfo(col.id, d1, 'Convoi exceptionnel à 14h, prévoir 30 min d’attente');
+  const r = await runAlerts({ date: d1, hour: 7 });
+  assert.equal(r.morning, 1);
+  const morning = await lastOut(P);
+  assert.match(morning, /Tunnel du Mont-Blanc/);
+  assert.match(morning, /Attente au tunnel/);
+  assert.doesNotMatch(morning, /Travaux/, 'seulement les infos choisies');
+  assert.match(morning, /Convoi exceptionnel/);
+  await runAlerts({ date: d1, hour: 16 });
+  assert.doesNotMatch(await lastOut(P), /Bonsoir/, 'question de fin de journée à 18h pour ce lien, pas 16h');
+  await runAlerts({ date: d1, hour: 18 });
+  assert.match(await lastOut(P), /Comment s'est passé votre trajet/);
+});

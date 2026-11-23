@@ -9,7 +9,8 @@ import { handleInbound, createCollection, waLink, phoneHash, drainQueues } from 
 import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
-import { alertStats, sendNow } from './alerts.js';
+import { alertStats, sendNow, addDailyInfo } from './alerts.js';
+import { PRESETS, presetConfig } from './optins.js';
 
 // ---------------- Webhook ----------------
 // 1) vérifie la signature, 2) enregistre l'événement (anti-doublon par X-Idempotency-Key),
@@ -147,15 +148,19 @@ export function createApp() {
        from collections c where c.company_id=$1 order by c.created_at desc`,
       [req.company.id],
     );
-    res.send(page(req, 'Collectes', V.dashboardPage({ collections })));
+    res.send(page(req, 'Collectes', V.dashboardPage({ collections, presets: PRESETS })));
   });
 
   app.post('/collections', auth, async (req, res) => {
-    const kind = req.body.kind === 'alerts' ? 'alerts' : 'feedback';
-    const title = String(req.body.title || '').trim().slice(0, 80) || (kind === 'alerts' ? 'votre journée de ski' : '');
-    const question = String(req.body.question || '').trim().slice(0, 300) || (kind === 'alerts' ? "Comment s'est passée votre journée de ski ?" : 'Comment avez-vous vécu votre expérience ? Racontez-nous librement, par écrit ou en vocal.');
+    // "feedback" = question ouverte ; sinon nom d'un modèle de lien d'inscription (src/optins.js)
+    const preset = PRESETS[req.body.kind] ? req.body.kind : null;
+    const kind = preset ? 'alerts' : 'feedback';
+    const cfg = preset ? presetConfig(preset) : null;
+    const title = String(req.body.title || '').trim().slice(0, 80) || cfg?.title || '';
+    const question = String(req.body.question || '').trim().slice(0, 300) || cfg?.eod_question || 'Comment avez-vous vécu votre expérience ? Racontez-nous librement, par écrit ou en vocal.';
     if (!title || !question) return res.redirect('/');
-    const col = await createCollection(req.company.id, title, question, kind);
+    if (cfg && req.body.question?.trim()) cfg.eod_question = question;
+    const col = await createCollection(req.company.id, title, question, kind, cfg);
     res.redirect(`/collections/${col.id}`);
   });
 
@@ -172,7 +177,7 @@ export function createApp() {
       report = { ...(await import('./report.js').then((m) => m.collectionStats(col.id))), threshold: req.company.privacy_threshold, belowThreshold: false, synthesis: null };
     }
     const feedbacks = await query('select * from feedbacks where collection_id=$1 order by created_at desc', [col.id]);
-    const alertData = col.kind === 'alerts' ? await alertStats(col.id) : null;
+    const alertData = col.kind === 'alerts' ? await alertStats(col) : null;
     res.send(page(req, col.title, V.collectionPage({ col, report, feedbacks, link: waLink(col.code, col.kind), synthesisError, alertData, notice: req.query.notice })));
   });
 
@@ -193,8 +198,17 @@ export function createApp() {
     const col = await ownCollection(req);
     if (!col || col.kind !== 'alerts') return res.sendStatus(404);
     const r = await sendNow(col.id, req.body.type === 'eod' ? 'eod' : 'morning');
-    const notice = `${r.sent} message(s) envoyé(s)${r.skipped ? `, ${r.skipped} non envoyé(s) : fenêtre WhatsApp de 24 h fermée` : ''}.`;
+    const notice = `${r.sent} message(s) envoyé(s)${r.skipped ? `, ${r.skipped} non envoyé(s) : fenêtre WhatsApp de 24 h fermée` : ''}${r.noInfo ? `, ${r.noInfo} sans info du jour à envoyer` : ''}.`;
     res.redirect(`/collections/${col.id}?notice=${encodeURIComponent(notice)}`);
+  });
+
+  app.post('/collections/:id/daily-info', auth, async (req, res) => {
+    const col = await ownCollection(req);
+    if (!col || col.kind !== 'alerts') return res.sendStatus(404);
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(req.body.day || '') ? req.body.day : null;
+    const body = String(req.body.body || '').trim().slice(0, 500);
+    if (day && body) await addDailyInfo(col.id, day, body);
+    res.redirect(`/collections/${col.id}?notice=${encodeURIComponent(day && body ? 'Info du jour enregistrée.' : 'Date ou texte manquant.')}`);
   });
 
   app.post('/collections/:id/synthesis', auth, async (req, res) => {

@@ -50,7 +50,7 @@ export function loginPage(error) {
 ${error ? `<p style="color:var(--bad)">${esc(error)}</p>` : ''}<p><button>Se connecter</button></p></form></div>`;
 }
 
-export function dashboardPage({ collections }) {
+export function dashboardPage({ collections, presets = {} }) {
   const rows = collections
     .map(
       (c) => `<tr><td><a href="/collections/${c.id}">${esc(c.title)}</a><div class="mute">${esc(c.code)}</div></td>
@@ -61,7 +61,7 @@ export function dashboardPage({ collections }) {
   return `<h1>Collectes</h1><p class="mute">Créez une collecte ici ou en écrivant à LEMO sur WhatsApp.</p>
 <table><tr><th>Collecte</th><th>Réponses</th><th>Alertes</th><th>Statut</th><th>Créée</th></tr>${rows || '<tr><td colspan="5" class="mute">Aucune collecte.</td></tr>'}</table>
 <h2>Nouvelle collecte</h2><form class="card" method="post" action="/collections">
-<label>Type</label><select name="kind"><option value="feedback">Retours clients (question ouverte)</option><option value="alerts">Alertes remontées + questions + retour de fin de journée</option></select>
+<label>Type</label><select name="kind"><option value="feedback">Retours clients (question ouverte)</option>${Object.entries(presets).map(([id, p]) => `<option value="${esc(id)}">Lien d'inscription : ${esc(p.label)}</option>`).join('')}</select>
 <label>Sujet (court)</label><input name="title" placeholder="votre séjour" maxlength="80">
 <label>Question ouverte posée aux clients (pour les alertes : question de fin de journée, laisser vide pour la valeur par défaut)</label><textarea name="question" rows="2" maxlength="300" placeholder="Comment avez-vous vécu votre séjour ? Racontez-nous librement, par écrit ou en vocal."></textarea>
 <p><button>Créer la collecte</button></p></form>`;
@@ -79,19 +79,22 @@ function bars(items, labels = {}) {
     .join('');
 }
 
-const TOPIC_LABEL = { ouverture_remontees: 'Ouverture des remontées', horaires: 'Horaires', meteo_neige: 'Météo et neige', forfaits_tarifs: 'Forfaits et tarifs', acces_parking_navettes: 'Accès, parking, navettes', securite: 'Sécurité', restauration_services: 'Restauration et services', autre: 'Autre' };
+const TOPIC_LABEL = { ouverture_remontees: 'Ouverture des remontées', horaires: 'Horaires', meteo_neige: 'Météo et neige', forfaits_tarifs: 'Forfaits et tarifs', acces_parking_navettes: 'Accès, parking, navettes', securite: 'Sécurité', restauration_services: 'Restauration et services', fermetures: 'Fermetures', attente_tunnel: "Temps d'attente", travaux: 'Travaux', meteo_equipements: 'Météo et équipements', peage_tarifs: 'Péage et tarifs', itineraire: 'Itinéraire', acces: 'Accès', tarifs: 'Tarifs', services: 'Services', autre: 'Autre' };
 
 function alertsBlock(col, a) {
   const q = (list) =>
     list.length
       ? list.slice(0, 30).map((x) => `<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill">${esc(TOPIC_LABEL[x.topic] || x.topic)}</span>${x.answerable === false ? '<span class="pill high">sans réponse</span>' : ''}<span style="flex:1">${esc(x.question)}</span><span class="mute">${new Date(x.created_at).toLocaleString('fr-FR')}</span></div>`).join('')
       : '<p class="mute">Aucune question pour l\'instant.</p>';
-  return `<h2>Alertes remontées</h2>
+  return `<h2>Inscrits : ${esc(a.cfg.label || 'lien d’inscription')}</h2>
 <div class="grid"><div class="card"><div class="mute">Abonnés actifs</div><div class="kpi">${a.active}</div><div class="mute">${a.subscribers} au total</div></div>
 <div class="card"><div class="mute">Questions posées</div><div class="kpi">${a.questions.length}</div><div class="mute">${a.unanswered.length} sans réponse</div></div>
 <div class="card"><div class="mute">Envois non faits (fenêtre 24 h fermée)</div><div class="kpi" style="color:${a.skipped ? 'var(--warn)' : 'inherit'}">${a.skipped}</div></div></div>
-<div class="grid"><div class="card"><b>Domaines demandés</b>${bars(a.byDomain)}</div><div class="card"><b>Jours demandés</b>${bars(a.byDay)}</div><div class="card"><b>Sujets des questions</b>${bars(a.topics, TOPIC_LABEL)}</div></div>
-<div class="card"><b>Test immédiat</b><p class="mute">Les envois automatiques partent vers 8h (info du matin) et 16h (question de fin de journée), heure de Paris. Pour une démo, déclenchez-les maintenant :</p>
+<div class="grid">${a.byStep.map((s) => `<div class="card"><b>${esc(s.title)}</b>${bars(s.items)}</div>`).join('')}<div class="card"><b>Jours demandés</b>${bars(a.byDay)}</div><div class="card"><b>Sujets des questions</b>${bars(a.topics, TOPIC_LABEL)}</div></div>
+<h2>Infos du jour de l'équipe</h2><div class="card"><p class="mute">Ajoutées au message du matin et utilisées par l'IA pour répondre aux questions de ce jour-là.</p>
+<form method="post" action="/collections/${col.id}/daily-info" class="row"><input type="date" name="day" value="${esc(a.tomorrow)}" style="width:auto"><input name="body" maxlength="500" placeholder="Ex : Télécabine de Bochard fermée jusqu'à 11h (vent)" style="flex:1;min-width:220px"><button>Ajouter</button></form>
+${a.infos.length ? a.infos.map((i) => `<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><span class="pill">${esc(i.day)}</span><span style="flex:1">${esc(i.body)}</span><span class="mute">${esc(i.source)}</span></div>`).join('') : '<p class="mute">Aucune info saisie.</p>'}</div>
+<div class="card"><b>Test immédiat</b><p class="mute">Les envois automatiques partent vers ${a.cfg.morning_hour}h (info du matin)${a.cfg.eod_hour != null ? ` et ${a.cfg.eod_hour}h (question de fin de journée)` : ''}, heure de Paris. Pour une démo, déclenchez-les maintenant :</p>
 <div class="row"><form method="post" action="/collections/${col.id}/send-now"><input type="hidden" name="type" value="morning"><button>Envoyer l'info du matin</button></form>
 <form method="post" action="/collections/${col.id}/send-now"><input type="hidden" name="type" value="eod"><button class="ghost">Envoyer la question de fin de journée</button></form></div></div>
 <h2>Questions sans réponse : ce qui manque à votre communication</h2><div class="card">${q(a.unanswered)}</div>

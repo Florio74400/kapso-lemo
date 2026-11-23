@@ -20,7 +20,7 @@ export function phoneHash(phone) {
 }
 
 export function waLink(code, kind = 'feedback') {
-  const text = encodeURIComponent(kind === 'alerts' ? `Bonjour, je veux recevoir les infos remontées (${code})` : `Bonjour, je souhaite donner mon avis (${code})`);
+  const text = encodeURIComponent(kind === 'alerts' ? `Bonjour, je veux recevoir les infos (${code})` : `Bonjour, je souhaite donner mon avis (${code})`);
   return `https://wa.me/${config.whatsappDisplayNumber || 'NUMERO'}?text=${text}`;
 }
 
@@ -279,12 +279,12 @@ export function newCode() {
   return c;
 }
 
-export async function createCollection(companyId, title, question, kind = 'feedback') {
+export async function createCollection(companyId, title, question, kind = 'feedback', config = null) {
   for (let i = 0; i < 5; i++) {
     const code = newCode();
     const row = await one(
-      `insert into collections (company_id, code, title, question, kind) values ($1,$2,$3,$4,$5) on conflict (code) do nothing returning *`,
-      [companyId, code, title, question, kind],
+      `insert into collections (company_id, code, title, question, kind, config) values ($1,$2,$3,$4,$5,$6) on conflict (code) do nothing returning *`,
+      [companyId, code, title, question, kind, config ? JSON.stringify(config) : null],
     );
     if (row) return row;
   }

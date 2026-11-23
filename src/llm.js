@@ -197,34 +197,36 @@ function simSynthesis(analyses) {
 // ================= Alertes remontées : questions libres des abonnés =================
 export const TOPICS = ['ouverture_remontees', 'horaires', 'meteo_neige', 'forfaits_tarifs', 'acces_parking_navettes', 'securite', 'restauration_services', 'autre'];
 
-export const AlertAnswer = z.object({
-  kind: z.enum(['question', 'feedback', 'both']).describe("question : il demande une info. feedback : il donne son avis ou raconte son expérience. both : les deux."),
-  answer: z.string().describe('Réponse courte (600 caractères max), utile, en français, sans inventer.'),
-  topic: z.enum(TOPICS),
-  answerable: z.boolean().describe("true seulement si le contexte contenait l'information demandée."),
-});
+export const alertAnswerSchema = (topics) =>
+  z.object({
+    kind: z.enum(['question', 'feedback', 'both']).describe("question : il demande une info. feedback : il donne son avis ou raconte son expérience. both : les deux."),
+    answer: z.string().describe('Réponse courte (600 caractères max), utile, en français, sans inventer.'),
+    topic: z.enum(topics),
+    answerable: z.boolean().describe("true seulement si le contexte contenait l'information demandée."),
+  });
+export const AlertAnswer = alertAnswerSchema(TOPICS);
 
-export async function answerAlertQuestion({ question, context, company }) {
-  if (llmMode() === 'simulated') return simAnswer(question, context);
+export async function answerAlertQuestion({ question, context, company, service = 'les alertes', topics = TOPICS, fallback = 'se renseigner aux caisses du domaine' }) {
+  if (llmMode() === 'simulated') return simAnswer(question, context, topics);
   return structured(
-    AlertAnswer,
-    `Tu es l'assistant WhatsApp de ${company} pour les skieurs abonnés aux alertes remontées.
-Le skieur peut poser une question, donner un retour sur son expérience (avis, plainte, compliment, suggestion), ou les deux. Indique lequel dans "kind".
+    alertAnswerSchema(topics.includes('autre') ? topics : [...topics, 'autre']),
+    `Tu es l'assistant WhatsApp de ${company} pour les personnes abonnées au service « ${service} ».
+La personne peut poser une question, donner un retour sur son expérience (avis, plainte, compliment, suggestion), ou les deux. Indique lequel dans "kind".
 - Retour : remercie sincèrement, montre que tu as compris le point principal, et précise qu'il est bien transmis à l'équipe (c'est vrai : tous les retours sont analysés et remontés). Ne dis jamais que tu ne peux pas transmettre. Pas de promesse d'action précise.
-- Question : réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas (tarif, niveau des pistes, événement, restaurant, etc.), dis-le simplement et conseille de se renseigner aux caisses, et mets answerable=false.
+- Question : réponds UNIQUEMENT à partir du CONTEXTE fourni. Si l'information n'y est pas, dis-le simplement et conseille de ${fallback}, et mets answerable=false. Si l'info vient de l'équipe, tu peux le préciser.
 - Pour un retour sans question, answerable=true.
 Réponse brève, chaleureuse, pratique. Pas de titre, pas de liste longue. Classe aussi le message dans un thème.
 ${GROUNDING}`,
-    `<contexte>\n${context}\n</contexte>\n<question_skieur>${question}</question_skieur>`,
+    `<contexte>\n${context}\n</contexte>\n<message>${question}</message>`,
   );
 }
 
-function simAnswer(question, context) {
+function simAnswer(question, context, topics = TOPICS) {
   const t = norm(question);
   const isQuestion = /\?|est-ce|quel|quand|combien|ou |comment|y a-t-il|il y a/.test(t);
   const isFeedback = /trop|attente|super|genial|nul|decu|bravo|merci|sale|froid|cher|dommage|top/.test(t) && !/\?$/.test(question.trim());
   if (isFeedback && !isQuestion) return { kind: 'feedback', answer: "Merci pour votre retour, il est bien transmis à l'équipe !", topic: 'autre', answerable: true };
-  const topic = /ouvert|ferme|remont|telecabine|telesiege|telepherique/.test(t)
+  let topic = /ouvert|ferme|remont|telecabine|telesiege|telepherique/.test(t)
     ? 'ouverture_remontees'
     : /heure|horaire/.test(t)
       ? 'horaires'
@@ -235,6 +237,7 @@ function simAnswer(question, context) {
           : /parking|bus|navette/.test(t)
             ? 'acces_parking_navettes'
             : 'autre';
+  if (!topics.includes(topic)) topic = 'autre';
   if (topic === 'forfaits_tarifs' || topic === 'autre') {
     return { kind: 'question', answer: "Je n'ai pas cette information. Le plus simple est de vous renseigner aux caisses du domaine.", topic, answerable: false };
   }

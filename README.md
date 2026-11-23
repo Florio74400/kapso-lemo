@@ -136,6 +136,21 @@ Vérification rapide : `https://<votre-app>/health` indique la base, le mode IA 
 
 Connecter un numéro dédié via Kapso (Kapso > WhatsApp > Connect, connexion Meta guidée), puis remplacer `KAPSO_PHONE_NUMBER_ID` et `WHATSAPP_DISPLAY_NUMBER`, recréer le webhook sur ce numéro et vider `ALLOWED_TEST_NUMBERS` **uniquement** après validation. Avant d'ouvrir à de vrais clients : mentions d'information RGPD validées par un juriste (responsable de traitement, durée, droits), registre de traitement, et accord de sous-traitance avec Kapso, Anthropic et Supabase.
 
+## Liens d'inscription (opt-in) configurables
+
+Un lien d'inscription (QR code, puce NFC, lien wa.me) inscrit une personne à un service : questions de départ, info chaque matin, questions libres et retours à tout moment, question de fin de journée analysée comme un retour client.
+
+**Où c'est stocké**
+- Les modèles de parcours sont dans `src/optins.js` (`PRESETS`) : questions de départ (choix unique, choix multiple, jours), horaires, source des infos, thèmes des questions, consigne quand l'IA ne sait pas.
+- Chaque lien créé est une ligne de la table `collections` (Supabase), avec son code `LEMO-XXXX` et une copie de sa configuration dans la colonne `config`. Modifier un modèle n'affecte donc pas les liens déjà créés.
+- Les inscrits et leurs choix sont dans `subscriptions` (`choices`), les questions posées dans `questions`, les infos saisies par l'équipe dans `daily_info`, les retours dans `feedbacks`.
+
+**Créer un nouveau lien**
+- À partir d'un modèle existant : tableau de bord, « Nouvelle collecte », choisir le type « Lien d'inscription : … ».
+- Nouveau parcours (autre exploitant, autres questions) : ajouter un modèle dans `PRESETS`, et si besoin une source de données (comme `src/cmb-data.js` ou `src/atmb-data.js`). Le modèle `manual` fonctionne sans source : le message du matin reprend les « Infos du jour » saisies dans le tableau de bord.
+
+Modèles fournis : `cmb_ski` (remontées, démo), `atmb_trafic` (tunnel et autoroutes, démo, 3 questions de départ), `manual`.
+
 ## Structure
 
 ```
@@ -143,6 +158,10 @@ src/server.js        webhook, CRM, simulateur
 src/conversation.js  parcours client et dirigeant, consentement, STOP
 src/llm.js           Claude (sorties JSON validées) + simulateur d'analyse
 src/report.js        statistiques, synthèse, seuil de confidentialité
+src/alerts.js        parcours d'inscription : choix, envois programmés, questions, retours
+src/optins.js        modèles de liens d'inscription (questions, horaires, sources)
+src/cmb-data.js      données de démonstration remontées
+src/atmb-data.js     données de démonstration info trafic
 src/kapso.js         signature, envoi de messages, lecture des webhooks
 src/jobs.js          clôtures automatiques, reprises, purge RGPD
 supabase/migrations  schéma SQL
