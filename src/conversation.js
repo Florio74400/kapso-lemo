@@ -122,7 +122,7 @@ async function route(msg) {
   if (company) {
     if (!sub) return ownerMessage(msg, company);
     const intent = await classifyOwnerMessage((msg.kind === 'audio' ? msg.transcript : msg.body) || '').catch(() => null);
-    if (intent && ['create_collection', 'report', 'list'].includes(intent.intent)) return ownerMessage(msg, company, intent);
+    if (intent && ['create_collection', 'report', 'list', 'ask_data'].includes(intent.intent)) return ownerMessage(msg, company, intent);
   }
   if (sub) return alerts.answerQuestion(msg, hash, sub);
 

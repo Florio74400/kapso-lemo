@@ -337,3 +337,15 @@ test('direction : un lecteur interroge les retours par WhatsApp, sans pouvoir cr
   const d = await gatherData(company.id, 'today');
   assert.ok(d.text.includes('Brévent – Flégère'), 'les retours sont rattachés au domaine choisi');
 });
+
+test('dirigeant abonné : les questions sur les retours vont à l’analyse, les questions pratiques à l’assistant', async () => {
+  const col = await one(`select * from collections where kind='alerts' and config is null limit 1`);
+  await say(OWNER, `Infos (${col.code})`);
+  await say(OWNER, 'oui');
+  await say(OWNER, 'Grands Montets');
+  await say(OWNER, 'demain');
+  await say(OWNER, "Est-ce qu'il y a eu des problèmes signalés cette semaine ?");
+  assert.match(await lastOut(OWNER), /Base : \d+ retour/);
+  await say(OWNER, 'Il y a des navettes entre les domaines ?');
+  assert.match(await lastOut(OWNER), /Données de démonstration/);
+});

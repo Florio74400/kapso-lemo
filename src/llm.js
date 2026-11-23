@@ -72,7 +72,8 @@ export async function classifyOwnerMessage(text) {
 Classe sa demande :
 - create_collection : il veut recueillir l'avis/ressenti de ses clients sur quelque chose. Déduis un sujet court et formule UNE question ouverte, simple, qui invite à raconter son ressenti (pas de question fermée, pas de note sur 10).
 - report : il veut le bilan / la synthèse globale d'une collecte.
-- ask_data : il pose une question précise sur ce que vivent ou disent les clients (problèmes, lieux, émotions, tendances, questions posées, comparaison de jours). Indique la période.
+- ask_data : il pose une question sur les RETOURS et le vécu des clients : problèmes signalés, irritants, incidents, pannes vécues, émotions, tendances, ce que les clients ont dit ou demandé, sur une période (aujourd'hui, hier, une semaine, un mois...). Indique la période.
+- other : notamment une question PRATIQUE sur l'état du service (ex : « Lognan est ouvert demain ? », « il y a des navettes ? », horaires, météo), qui ne porte pas sur ce que disent les clients.
 - list : il veut voir ses collectes.
 - help : il demande comment ça marche.
 - other : le reste.
@@ -132,8 +133,8 @@ function simOwner(text) {
   const code = (text.match(/LEMO-[A-Z0-9]{4}/i) || [null])[0];
   const base = { period: null, collection_title: null, collection_question: null, collection_code: null };
   if (/bilan|synthese|resultat|resume/.test(t)) return { ...base, intent: 'report', collection_code: code?.toUpperCase() || null };
-  if (/\?/.test(text) || /^(est-ce|y a-t-il|quel|quels|quelles|combien|qu'est-ce)/.test(t)) {
-    const period = /aujourd/.test(t) ? 'today' : /hier/.test(t) ? 'yesterday' : /mois/.test(t) ? '30d' : '7d';
+  if (/probleme|irritant|retour|incident|panne|plainte|client|avis|emotion|securite|ressenti|se plaign|signale/.test(t) && (/\?/.test(text) || /^(est-ce|y a-t-il|quel|quels|quelles|combien|qu'est-ce|comment)/.test(t))) {
+    const period = /aujourd/.test(t) ? 'today' : /hier/.test(t) ? 'yesterday' : /mois|novembre|depuis le debut/.test(t) ? '30d' : '7d';
     return { ...base, intent: 'ask_data', period };
   }
   if (/liste|mes collectes/.test(t)) return { intent: 'list', period: null, collection_title: null, collection_question: null, collection_code: null };
