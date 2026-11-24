@@ -177,15 +177,14 @@ $('phone').onchange=refresh;refresh();setInterval(refresh,3000);
 }
 
 // Outil d'acquisition : entonnoir et fiches des early adopters, avec le message prêt pour les recontacter.
-const STEP_LABEL = { awaiting_experience: 'Accueilli', awaiting_blindspot: 'Moment raconté', awaiting_projection: 'Schéma reçu', experienced: 'Parcours terminé' };
+const STEP_LABEL = { awaiting_experience: 'Accueilli', awaiting_blindspot: 'Moment raconté', awaiting_projection: 'Analyse reçue', experienced: 'Analyse reçue' };
 export function earlyAdoptersPage({ funnel, members }) {
   const steps = [
     ['Page ouverte', funnel.views],
     ['Prénom saisi', funnel.continues],
     ['« Hey LEMO » envoyé', funnel.hey],
     ['Moment raconté', funnel.told],
-    ['Schéma reçu', funnel.reported],
-    ['Projection donnée', funnel.done],
+    ['Analyse reçue', funnel.reported],
     ['Invités arrivés', funnel.invited],
   ];
   const top = Math.max(1, ...steps.map((x) => x[1]));
@@ -194,23 +193,23 @@ export function earlyAdoptersPage({ funnel, members }) {
     .join('');
   const rows = members
     .map((m) => {
-      const l = m.lead || {};
-      const write = m.phone ? `https://wa.me/${m.phone}${l.founder_message ? `?text=${encodeURIComponent(l.founder_message)}` : ''}` : null;
+      const r = m.report || {};
+      const write = m.phone ? `https://wa.me/${m.phone}${r.founder_message ? `?text=${encodeURIComponent(r.founder_message)}` : ''}` : null;
       return `<tr>
 <td><strong>${esc(m.first_name || '—')}</strong><div class="mute">+${esc(m.phone || '')}</div><div class="mute">${new Date(m.created_at).toLocaleDateString('fr-FR')}</div></td>
-<td>${esc([l.company, l.sector, l.role].filter(Boolean).join(' · ') || '—')}${l.priority ? `<div><span class="pill ${l.priority === 'chaud' ? 'high' : l.priority === 'tiède' ? 'medium' : ''}">${esc(l.priority)}</span></div>` : ''}</td>
-<td>${l.moment ? esc(l.moment) : '—'}${l.audience && l.audience !== 'inconnu' ? `<div class="mute">${esc(l.audience)}</div>` : ''}
+<td>${r.key_moment ? esc(r.key_moment) : m.experience ? esc(m.experience.slice(0, 120)) : '—'}${r.blind_spot ? `<div class="mute">Angle mort : ${esc(r.blind_spot)}</div>` : ''}
 <details><summary class="mute">Détail</summary>
 ${m.experience ? `<p class="mute">Son moment</p><blockquote>${esc(m.experience)}</blockquote>` : ''}
 ${m.blindspot ? `<p class="mute">${esc(m.followup || 'Relance')}</p><blockquote>${esc(m.blindspot)}</blockquote>` : ''}
-${m.projection ? `<p class="mute">Où brancher LEMO</p><blockquote>${esc(m.projection)}</blockquote>` : ''}
-${l.founder_message ? `<p class="mute">Message prêt</p><blockquote>${esc(l.founder_message)}</blockquote>` : ''}
+${r.story_lemo ? `<p class="mute">Message reçu</p><blockquote>${esc([r.story_lemo, r.story_survey].join('\n\n'))}</blockquote>` : ''}
+${m.card_token ? `<p class="mute">Fiche visuelle</p><img src="/m/${esc(m.card_token)}.png" alt="" style="width:100%;max-width:420px;border:1px solid var(--line);border-radius:8px">` : ''}
+${r.founder_message ? `<p class="mute">Message prêt</p><blockquote>${esc(r.founder_message)}</blockquote>` : ''}
 </details></td>
 <td>${esc(STEP_LABEL[m.state] || m.state)}<div class="mute">Invité par ${esc(m.inviter || 'lien général')}</div><div class="mute">Invitations : ${m.invited_count}/${m.invites_total}</div></td>
 <td>${write ? `<a href="${esc(write)}" target="_blank" rel="noopener"><button>Écrire</button></a>` : ''}</td></tr>`;
     })
     .join('');
-  return `<h1>Early adopters</h1><p class="mute">Les personnes arrivées par lien d'invitation, de la page jusqu'à leur projection. « Écrire » ouvre ton WhatsApp avec le message prêt.</p>
+  return `<h1>Early adopters</h1><p class="mute">Les personnes arrivées par lien d'invitation, de la page jusqu'à leur analyse. « Écrire » ouvre ton WhatsApp avec le message prêt.</p>
 <div class="card">${bars}</div>
-<table><thead><tr><th>Personne</th><th>Entreprise</th><th>Où brancher LEMO</th><th>Étape</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="mute">Personne pour l’instant.</td></tr>'}</tbody></table>`;
+<table><thead><tr><th>Personne</th><th>Son moment</th><th>Étape</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="mute">Personne pour l’instant.</td></tr>'}</tbody></table>`;
 }

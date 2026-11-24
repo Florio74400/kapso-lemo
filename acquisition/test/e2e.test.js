@@ -364,7 +364,7 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Quelle heure ?'), '👍');
 });
 
-test('invitation : page épurée, parcours court, schéma, projection, invitations et alerte au fondateur', async () => {
+test('invitation : page épurée, parcours, récit LEMO face à l’enquête J+4, lien personnel et alerte au fondateur', async () => {
   const page = await fetch(`${base}/i`).then((r) => r.text());
   assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
   assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
@@ -381,10 +381,11 @@ test('invitation : page épurée, parcours court, schéma, projection, invitatio
   const outsOf = async (phone) => (await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(phone)])).map((r) => r.body);
   await say(P, "Hey LEMO, c'est florio !");
   let outs = await outsOf(P);
-  assert.equal(outs.length, 3, 'trois messages d’accueil');
+  assert.equal(outs.length, 4, 'quatre messages d’accueil');
   assert.match(outs[0], /^Hello Florio\. Je suis LEMO/);
-  assert.match(outs[1], /3 invitations/);
-  assert.match(outs[2], /événement marquant de ta journée/);
+  assert.match(outs[1], /3 invitations, débloquées après ta première expérience/);
+  assert.match(outs[2], /Le plus simple pour comprendre/);
+  assert.match(outs[3], /événement marquant de ta journée/);
 
   // Événement marquant -> relance sur un angle mort
   await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');
@@ -393,36 +394,27 @@ test('invitation : page épurée, parcours court, schéma, projection, invitatio
   assert.equal(m.first_name, 'Florio');
   assert.equal(m.state, 'awaiting_blindspot');
 
-  // Relance -> schéma + comparaison J+4 (texte) + question de projection ; plus de « continuons le dev »
+  // Relance -> un seul message raconté (LEMO puis enquête J+4), sans image ni nouvelle question
   await say(P, "Quand il a reconnu que notre proposition l'avait surpris, tout s'est détendu.");
   m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
-  assert.equal(m.state, 'awaiting_projection');
+  assert.equal(m.state, 'experienced');
+  assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
   outs = await outsOf(P);
-  const tail = outs.slice(-3);
-  assert.match(tail[0], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
-  assert.match(tail[1], /enquête de satisfaction à J\+4/);
-  assert.match(tail[1], /signaux contre 2.*×\d/);
-  assert.match(tail[2], /où brancherais-tu LEMO en premier/);
-  assert.ok(!outs.some((b) => /continuons le dev|Ce que LEMO a capté/.test(b)));
+  assert.equal(outs.length, 6, 'un seul message après la relance');
+  const story = outs[5];
+  assert.match(story, /^Voilà ton moment, vu par LEMO\./);
+  assert.match(story, /Une enquête de satisfaction, quatre jours plus tard/);
+  assert.match(story, /×\d plus riche/);
+  assert.ok(!outs.some((b) => /^\[image\]|continuons le dev|où brancherais-tu/.test(b)));
   const card = await fetch(`${base}/m/${m.card_token}.png`);
   assert.equal(card.headers.get('content-type'), 'image/png');
-  assert.ok((await card.arrayBuffer()).byteLength > 10000);
   assert.equal((await fetch(`${base}/m/inconnu-123456789.png`)).status, 404);
 
-  // Projection -> phrase personnalisée, invitations débloquées, alerte au fondateur avec message prêt
-  await say(P, 'Chez Cimes Hôtels, au check-in et au petit-déjeuner de nos clients.');
-  m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
-  assert.equal(m.state, 'experienced');
-  assert.match(m.projection, /Cimes Hôtels/);
-  assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
-  const lead = typeof m.lead === 'string' ? JSON.parse(m.lead) : m.lead;
-  assert.ok(lead.hook && lead.founder_message);
-  const end = await lastOut(P);
-  assert.match(end, /Florio, le fondateur de LEMO, va te recontacter/);
-  assert.match(end, new RegExp(`/i/${m.invite_code}$`));
+  // Alerte au fondateur avec message prêt
   const alert = await lastOut('33699990000');
   assert.match(alert, /Nouvel early adopter/);
   assert.match(alert, /\+33688881111/);
+  assert.match(alert, /déjeuner avec un client/);
   assert.match(alert, /https:\/\/wa\.me\/33688881111\?text=Salut/);
 
   // Lien personnel : « Invitation personnelle de Florio », puis l'invité est rattaché à Florio

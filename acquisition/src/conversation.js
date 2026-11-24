@@ -115,7 +115,6 @@ async function route(msg) {
   if (onboarding.HEY_RE.test(text)) return onboarding.welcome(msg);
   const newMember = await onboarding.inProgress(msg.phone);
   if (newMember && !STOP_RE.test(text)) {
-    if (newMember.state === 'awaiting_projection') return onboarding.receiveProjection(msg, newMember);
     if (newMember.state === 'awaiting_blindspot') return onboarding.receiveBlindspot(msg, newMember);
     return onboarding.receiveExperience(msg, newMember);
   }

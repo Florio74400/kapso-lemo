@@ -263,11 +263,10 @@ export function createApp() {
       (select count(*)::int from members) as hey,
       (select count(*)::int from members where experience is not null) as told,
       (select count(*)::int from members where report is not null) as reported,
-      (select count(*)::int from members where projection is not null) as done,
       (select count(*)::int from members where invited_by is not null) as invited`);
     const members = await query(`select m.*, i.first_name as inviter, (select count(*)::int from members x where x.invited_by=m.id) as invited_count
       from members m left join members i on i.id=m.invited_by order by m.updated_at desc limit 300`);
-    for (const m of members) if (typeof m.lead === 'string') m.lead = JSON.parse(m.lead);
+    for (const m of members) if (typeof m.report === 'string') m.report = JSON.parse(m.report);
     res.send(page(req, 'Early adopters', V.earlyAdoptersPage({ funnel, members })));
   });
 

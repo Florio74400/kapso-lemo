@@ -53,7 +53,7 @@ const GROUNDING = `Règles strictes :
 async function structured(schema, system, user, effort = 'low') {
   const res = await claude().messages.parse({
     model: config.model,
-    max_tokens: 4000,
+    max_tokens: 8000,
     system,
     messages: [{ role: 'user', content: user }],
     output_config: { effort, format: zodOutputFormat(schema) },
@@ -331,11 +331,17 @@ export const ExperienceReport = z.object({
   quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT du récit, 15 mots maximum. null si rien de parlant.'),
   survey_score: z.number().int().describe('Note sur 10 typique qu’une personne donnerait à J+4 pour ce type de moment.'),
   survey_comment: z.string().describe('Commentaire typique à J+4, 5 mots maximum, banal (ex : « Bien, rien à signaler. »).'),
+  story_lemo: z.string().describe('Paragraphe 1, 60 mots maximum, tutoiement, raconté comme une histoire : son moment tel que LEMO l’a capté, dans l’ordre (ce qu’il a ressenti au début, le point de bascule, la fin), et l’angle mort que LEMO a fait émerger. Commence par « Voilà ton moment, vu par LEMO. »'),
+  story_survey: z.string().describe('Paragraphe 2, 50 mots maximum, tutoiement : le même moment vu par une enquête de satisfaction reçue 4 jours plus tard, qui demande un effort ; la note et le commentaire banals qu’il aurait sans doute laissés ; ce qui aurait disparu (citer 2 éléments concrets de son récit). Commence par « Une enquête de satisfaction, quatre jours plus tard, »'),
+  founder_message: z.string().describe('Message de Florio, fondateur de LEMO, 45 mots maximum, tutoiement, chaleureux et sobre. Commence par « Salut <prénom>, c’est Florio, fondateur de LEMO. », fait un clin d’œil concret à son moment, finit par « Si cela éveille ton intérêt, serais-tu dispo pour en discuter ? »'),
 });
 
-export async function experienceReport({ experience, followup, answer }) {
+export async function experienceReport({ experience, followup, answer, firstName }) {
   if (llmMode() === 'simulated') {
     return {
+      story_lemo: 'Voilà ton moment, vu par LEMO. Un début tendu, puis un déclic qui a tout débloqué, et un vrai soulagement à la fin. L’angle mort : ce qui a fait basculer ton ressenti.',
+      story_survey: 'Une enquête de satisfaction, quatre jours plus tard, t’aurait demandé de remplir un questionnaire. Tu aurais sans doute mis 7/10, « Bien, rien à signaler ». La tension du début et le déclic auraient disparu.',
+      founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. Merci pour ton moment, ton déclic m’a parlé. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
       emotions: [{ emotion: 'agacement', moment: 'au début' }, { emotion: 'soulagement', moment: 'à la fin' }],
       key_moment: 'Le moment où la situation s’est débloquée',
       blind_spot: 'Ce qui a fait basculer le ressenti, invisible dans une note',
@@ -350,39 +356,11 @@ export async function experienceReport({ experience, followup, answer }) {
     `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. Analyse le récit d'une personne (événement marquant + réponse à une relance).
 Extrais ce que LEMO capte pendant l'expérience : émotions et moments, point de bascule, angle mort, signaux concrets, une citation exacte.
 Puis indique ce qu'une enquête de satisfaction envoyée 4 jours après obtient TYPIQUEMENT pour ce genre de moment (note et commentaire banal) : le souvenir lisse le vécu.
-Tout ce qui concerne LEMO vient UNIQUEMENT du récit. Phrases très courtes, en français.
+Enfin, rédige les deux paragraphes du message envoyé à la personne (story_lemo, story_survey) : une petite histoire simple et vivante, pas une liste, sans titre ni gras ni emoji. Et le message du fondateur.
+Tout ce qui concerne LEMO vient UNIQUEMENT du récit. Phrases très courtes, en français simple.
 ${GROUNDING}`,
-    `<recit>${experience}</recit>\n<relance>${followup}</relance>\n<reponse>${answer}</reponse>`,
+    `<prenom>${firstName || ''}</prenom>\n<recit>${experience}</recit>\n<relance>${followup}</relance>\n<reponse>${answer}</reponse>`,
     'medium',
   );
 }
 
-// Dernière étape : « où brancherais-tu LEMO chez toi ? » -> données de prospection + phrase de projection personnalisée.
-export const Lead = z.object({
-  company: z.string().nullable().describe('Entreprise ou organisation citée, telle quelle. null si absente.'),
-  sector: z.string().nullable().describe('Secteur, 3 mots maximum. null si impossible à déduire.'),
-  role: z.string().nullable().describe('Fonction de la personne si elle la mentionne. null sinon.'),
-  audience: z.enum(['clients', 'collaborateurs', 'les deux', 'inconnu']).describe('Qui LEMO écouterait.'),
-  moment: z.string().nullable().describe('Le moment ou le lieu à capter, 10 mots maximum. null si absent.'),
-  priority: z.enum(['chaud', 'tiède', 'froid']).describe('chaud = décideur ou projet concret ; tiède = intérêt réel mais flou ; froid = pas de cas d’usage.'),
-  hook: z.string().describe('Une phrase, 35 mots maximum, tutoiement, qui projette LEMO chez elle : ce que LEMO capterait, et ce que ses équipes pourraient faire sur le moment. Uniquement à partir de ses mots.'),
-  founder_message: z.string().describe('Message de Florio, fondateur de LEMO, 45 mots maximum, tutoiement, chaleureux et sobre. Commence par « Salut <prénom>, c’est Florio, fondateur de LEMO. », cite son cas en une phrase, finit par « Si cela éveille ton intérêt, serais-tu dispo pour en discuter ? »'),
-});
-
-export async function leadFromProjection({ firstName, experience, projection }) {
-  if (llmMode() === 'simulated') {
-    return {
-      company: null, sector: null, role: null, audience: 'clients', moment: null, priority: 'tiède',
-      hook: 'Chez toi, LEMO capterait ce que vivent tes clients au moment même, et tes équipes pourraient réagir avant que le ressenti ne se fige.',
-      founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. J’ai vu ton passage et ton idée pour tes clients. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
-    };
-  }
-  return structured(
-    Lead,
-    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel par messagerie (WhatsApp). ${firstName || 'La personne'} vient de tester LEMO sur un moment de sa journée, puis a dit où elle brancherait LEMO dans son activité.
-Extrais les informations utiles à la prospection, puis rédige la phrase de projection et le message du fondateur.
-N'invente aucune entreprise, fonction ou chiffre : si ce n'est pas dit, mets null. Pas d'emoji. Français simple.
-${GROUNDING}`,
-    `<prenom>${firstName || ''}</prenom>\n<moment_teste>${experience || ''}</moment_teste>\n<ou_brancher_lemo>${projection}</ou_brancher_lemo>`,
-  );
-}
