@@ -9,6 +9,7 @@ process.env.KAPSO_WEBHOOK_SECRET = 'test-secret-0123456789abcdef0123456789';
 process.env.APP_SECRET = 'test-app-secret-0123456789abcdef0123456789';
 process.env.DEMO_MODE = 'true';
 process.env.ONBOARDING_PAUSE_MS = '0';
+process.env.FOUNDER_PHONE = '33699990000';
 delete process.env.KAPSO_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.DATABASE_URL;
@@ -363,45 +364,84 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Quelle heure ?'), '👍');
 });
 
-test('invitation : page avec prénom, accueil early adopter sur WhatsApp, première expérience', async () => {
+test('invitation : page épurée, parcours court, schéma, projection, invitations et alerte au fondateur', async () => {
   const page = await fetch(`${base}/i`).then((r) => r.text());
   assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
   assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
-  assert.match(page, /wa\.me\/\d*\?text=Hey%20LEMO%20!/);
+  assert.match(page, /<h1>Bienvenue<\/h1>/);
+  assert.match(page, /Invitation personnelle</);
+  assert.match(page, /placeholder="Prénom"/);
+  assert.match(page, /Early adopter/);
+  assert.match(page, /Tu vas être transféré sur WhatsApp/);
   const img = await fetch(`${base}/public/lemo-invite.png`);
   assert.equal(img.headers.get('content-type'), 'image/png');
-  assert.match(page, /placeholder="Prénom"/);
+  await fetch(`${base}/i/evt?k=continue`, { method: 'POST' });
+
   const P = '33688881111';
+  const outsOf = async (phone) => (await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(phone)])).map((r) => r.body);
   await say(P, "Hey LEMO, c'est florio !");
-  const outs = await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(P)]);
-  assert.equal(outs.length, 4, 'quatre messages d’accueil');
-  assert.match(outs[0].body, /^Hello Florio\. Je suis LEMO/);
-  assert.match(outs[1].body, /3 invitations/);
-  assert.match(outs[3].body, /événement marquant de ta journée/);
+  let outs = await outsOf(P);
+  assert.equal(outs.length, 3, 'trois messages d’accueil');
+  assert.match(outs[0], /^Hello Florio\. Je suis LEMO/);
+  assert.match(outs[1], /3 invitations/);
+  assert.match(outs[2], /événement marquant de ta journée/);
+
   // Événement marquant -> relance sur un angle mort
   await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');
   assert.match(await lastOut(P), /\?/);
   let m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
   assert.equal(m.first_name, 'Florio');
   assert.equal(m.state, 'awaiting_blindspot');
-  assert.match(m.experience, /déjeuner avec un client/);
-  // Réponse à la relance -> restitution : schéma, ce que LEMO a capté, comparaison enquête J+4
+
+  // Relance -> schéma + comparaison J+4 (texte) + question de projection ; plus de « continuons le dev »
   await say(P, "Quand il a reconnu que notre proposition l'avait surpris, tout s'est détendu.");
   m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
-  assert.equal(m.state, 'experienced');
-  assert.ok(m.card_token && m.report);
-  const after = await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(P)]);
-  const tail = after.slice(-5).map((r) => r.body);
-  assert.match(tail[1], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
-  assert.match(tail[2], /Ce que LEMO a capté/);
-  assert.match(tail[3], /enquête de satisfaction à J\+4/);
-  assert.match(tail[3], /signaux contre 2.*×\d/);
-  assert.equal(tail[4], 'Très bien continuons le dev maintenant !');
+  assert.equal(m.state, 'awaiting_projection');
+  outs = await outsOf(P);
+  const tail = outs.slice(-3);
+  assert.match(tail[0], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
+  assert.match(tail[1], /enquête de satisfaction à J\+4/);
+  assert.match(tail[1], /signaux contre 2.*×\d/);
+  assert.match(tail[2], /où brancherais-tu LEMO en premier/);
+  assert.ok(!outs.some((b) => /continuons le dev|Ce que LEMO a capté/.test(b)));
   const card = await fetch(`${base}/m/${m.card_token}.png`);
-  assert.equal(card.status, 200);
   assert.equal(card.headers.get('content-type'), 'image/png');
   assert.ok((await card.arrayBuffer()).byteLength > 10000);
   assert.equal((await fetch(`${base}/m/inconnu-123456789.png`)).status, 404);
+
+  // Projection -> phrase personnalisée, invitations débloquées, alerte au fondateur avec message prêt
+  await say(P, 'Chez Cimes Hôtels, au check-in et au petit-déjeuner de nos clients.');
+  m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(m.state, 'experienced');
+  assert.match(m.projection, /Cimes Hôtels/);
+  assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
+  const lead = typeof m.lead === 'string' ? JSON.parse(m.lead) : m.lead;
+  assert.ok(lead.hook && lead.founder_message);
+  const end = await lastOut(P);
+  assert.match(end, /Florio, le fondateur de LEMO, va te recontacter/);
+  assert.match(end, new RegExp(`/i/${m.invite_code}$`));
+  const alert = await lastOut('33699990000');
+  assert.match(alert, /Nouvel early adopter/);
+  assert.match(alert, /\+33688881111/);
+  assert.match(alert, /https:\/\/wa\.me\/33688881111\?text=Salut/);
+
+  // Lien personnel : « Invitation personnelle de Florio », puis l'invité est rattaché à Florio
+  const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
+  assert.match(mine, /Invitation personnelle de Florio/);
+  assert.match(mine, /og:title" content="Florio t&#39;invite sur LEMO"/);
+  const G = '33677770000';
+  await say(G, `Hey LEMO, c'est Marc ! (invitation ${m.invite_code})`);
+  const guest = await one('select * from members where phone_hash=$1', [phoneHash(G)]);
+  assert.equal(guest.invited_by, m.id);
+  assert.equal(guest.first_name, 'Marc');
+
+  // CRM : entonnoir et fiche avec bouton « Écrire »
+  const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
+  const crm = await fetch(`${base}/early-adopters`, { headers: { cookie } }).then((r) => r.text());
+  assert.match(crm, /Page ouverte/);
+  assert.match(crm, /Florio/);
+  assert.match(crm, /Invitations : 1\/3/);
+  assert.match(crm, /wa\.me\/33688881111\?text=/);
 });
 
 test('citation : affichée seulement si elle existe mot pour mot', async () => {

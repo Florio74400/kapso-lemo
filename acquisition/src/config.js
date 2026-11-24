@@ -32,6 +32,8 @@ export const config = {
   appSecret: env.APP_SECRET || '',
   // Garde-fou phase de test : si rempli, LEMO ne répond qu'à ces numéros.
   allowedNumbers: list(env.ALLOWED_TEST_NUMBERS),
+  // Fondateur : reçoit l'alerte « nouvel early adopter » (par défaut, le premier OWNER_PHONE).
+  founderPhone: list(env.FOUNDER_PHONE || env.OWNER_PHONE)[0] || '',
 
   // Mode démo : simulateur + compte de démo. À n'activer qu'en local, jamais en ligne.
   demoMode: env.DEMO_MODE === 'true',

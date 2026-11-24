@@ -1,5 +1,5 @@
-// Schéma personnalisé envoyé sur WhatsApp : ce que LEMO capte pendant l'expérience,
-// face à ce qu'une enquête de satisfaction obtient à J+4. Rendu SVG -> PNG (police Montserrat embarquée).
+// Schéma personnalisé envoyé sur WhatsApp : « <Prénom>, ton moment vu par LEMO », ce que LEMO capte pendant l'expérience.
+// La comparaison avec une enquête à J+4 est envoyée en texte. Rendu SVG -> PNG (police Montserrat embarquée).
 import fs from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 
@@ -41,9 +41,8 @@ export function richness(r) {
 
 export function cardSvg(r, firstName) {
   const W = 1080;
-  const H = 1350;
+  const H = 1020;
   const n = signalCount(r);
-  const x = richness(r);
   let y = 0;
   const t = [];
   const text = (tx, ty, s, size, weight, color, extra = '') =>
@@ -77,19 +76,6 @@ export function cardSvg(r, firstName) {
   text(130, cy, 'Angle mort capté', 22, 700, '#E8734F');
   for (const l of lines(r.blind_spot, 52)) text(130, (cy += 40), l, 26, 300, '#333');
   text(130, y + 636, `${n} signaux exploitables`, 26, 700, '#2F3DA8');
-
-  // Bloc enquête J+4
-  y = 975;
-  t.push(`<rect x="80" y="${y}" width="920" height="200" rx="28" fill="#F4F4F5"/>`);
-  text(130, y + 60, 'ENQUÊTE DE SATISFACTION · J+4', 22, 700, '#888', 'letter-spacing="3"');
-  text(130, y + 140, `${r.survey_score}/10`, 64, 700, '#9A9AA2');
-  text(330, y + 128, `« ${r.survey_comment} »`, 30, 300, '#777');
-  text(330, y + 170, '2 signaux · un effort demandé · un souvenir lissé', 22, 300, '#999');
-
-  // Conclusion
-  text(80, 1272, `×${x}`, 84, 700, 'url(#g)');
-  text(240, 1240, 'plus riche qu’une enquête classique', 30, 500, '#1A1A1A');
-  text(240, 1282, 'pour ajuster sur le moment ou informer les équipes', 24, 300, '#777');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4553C7"/><stop offset="1" stop-color="#E8856B"/></linearGradient></defs>

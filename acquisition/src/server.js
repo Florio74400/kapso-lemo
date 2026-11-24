@@ -97,9 +97,27 @@ export function createApp() {
     res.set('Content-Type', 'image/png').set('Cache-Control', 'public, max-age=86400').send(cardPng(report, m.first_name));
   });
 
-  app.get(['/i', '/i/:code'], (req, res) => {
+  // Suivi de l'entonnoir : clic sur « Continuer » (le prénom n'est pas enregistré ici).
+  app.post('/i/evt', async (req, res) => {
+    const code = String(req.query.c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || null;
+    if (req.query.k === 'continue') await query(`insert into invite_events (kind, code) values ('continue',$1)`, [code]).catch(() => {});
+    res.sendStatus(204);
+  });
+
+  // Lien général (/i) ou lien personnel d'un membre (/i/CODE : « Invitation personnelle de Marc »).
+  app.get(['/i', '/i/:code'], async (req, res) => {
+    let code = null;
+    let inviter = null;
+    if (req.params.code) {
+      const m = await one(`select first_name, invite_code from members where invite_code=$1`, [req.params.code.toUpperCase()]);
+      if (m) ({ invite_code: code, first_name: inviter } = m);
+    }
+    // les robots d'aperçu (WhatsApp, réseaux) ne comptent pas comme des visites
+    if (!/whatsapp|facebookexternalhit|bot|crawler|preview/i.test(req.get('user-agent') || '')) {
+      await query(`insert into invite_events (kind, code) values ('view',$1)`, [code]).catch(() => {});
+    }
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
-    res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, variant: req.query.v }));
+    res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, inviter, code }));
   });
 
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
@@ -236,6 +254,21 @@ export function createApp() {
     if (!col) return res.sendStatus(404);
     await buildReport(col, req.company, { force: true }).catch((e) => console.error(e.message));
     res.redirect(`/collections/${col.id}`);
+  });
+
+  app.get('/early-adopters', auth, async (req, res) => {
+    const funnel = await one(`select
+      (select count(*)::int from invite_events where kind='view') as views,
+      (select count(*)::int from invite_events where kind='continue') as continues,
+      (select count(*)::int from members) as hey,
+      (select count(*)::int from members where experience is not null) as told,
+      (select count(*)::int from members where report is not null) as reported,
+      (select count(*)::int from members where projection is not null) as done,
+      (select count(*)::int from members where invited_by is not null) as invited`);
+    const members = await query(`select m.*, i.first_name as inviter, (select count(*)::int from members x where x.invited_by=m.id) as invited_count
+      from members m left join members i on i.id=m.invited_by order by m.updated_at desc limit 300`);
+    for (const m of members) if (typeof m.lead === 'string') m.lead = JSON.parse(m.lead);
+    res.send(page(req, 'Early adopters', V.earlyAdoptersPage({ funnel, members })));
   });
 
   app.get('/settings', auth, (req, res) => res.send(page(req, 'Réglages', V.settingsPage({ company: req.company, saved: req.query.saved }))));

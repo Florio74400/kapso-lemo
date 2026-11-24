@@ -356,3 +356,33 @@ ${GROUNDING}`,
     'medium',
   );
 }
+
+// Dernière étape : « où brancherais-tu LEMO chez toi ? » -> données de prospection + phrase de projection personnalisée.
+export const Lead = z.object({
+  company: z.string().nullable().describe('Entreprise ou organisation citée, telle quelle. null si absente.'),
+  sector: z.string().nullable().describe('Secteur, 3 mots maximum. null si impossible à déduire.'),
+  role: z.string().nullable().describe('Fonction de la personne si elle la mentionne. null sinon.'),
+  audience: z.enum(['clients', 'collaborateurs', 'les deux', 'inconnu']).describe('Qui LEMO écouterait.'),
+  moment: z.string().nullable().describe('Le moment ou le lieu à capter, 10 mots maximum. null si absent.'),
+  priority: z.enum(['chaud', 'tiède', 'froid']).describe('chaud = décideur ou projet concret ; tiède = intérêt réel mais flou ; froid = pas de cas d’usage.'),
+  hook: z.string().describe('Une phrase, 35 mots maximum, tutoiement, qui projette LEMO chez elle : ce que LEMO capterait, et ce que ses équipes pourraient faire sur le moment. Uniquement à partir de ses mots.'),
+  founder_message: z.string().describe('Message de Florio, fondateur de LEMO, 45 mots maximum, tutoiement, chaleureux et sobre. Commence par « Salut <prénom>, c’est Florio, fondateur de LEMO. », cite son cas en une phrase, finit par « Si cela éveille ton intérêt, serais-tu dispo pour en discuter ? »'),
+});
+
+export async function leadFromProjection({ firstName, experience, projection }) {
+  if (llmMode() === 'simulated') {
+    return {
+      company: null, sector: null, role: null, audience: 'clients', moment: null, priority: 'tiède',
+      hook: 'Chez toi, LEMO capterait ce que vivent tes clients au moment même, et tes équipes pourraient réagir avant que le ressenti ne se fige.',
+      founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. J’ai vu ton passage et ton idée pour tes clients. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
+    };
+  }
+  return structured(
+    Lead,
+    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel par messagerie (WhatsApp). ${firstName || 'La personne'} vient de tester LEMO sur un moment de sa journée, puis a dit où elle brancherait LEMO dans son activité.
+Extrais les informations utiles à la prospection, puis rédige la phrase de projection et le message du fondateur.
+N'invente aucune entreprise, fonction ou chiffre : si ce n'est pas dit, mets null. Pas d'emoji. Français simple.
+${GROUNDING}`,
+    `<prenom>${firstName || ''}</prenom>\n<moment_teste>${experience || ''}</moment_teste>\n<ou_brancher_lemo>${projection}</ou_brancher_lemo>`,
+  );
+}
