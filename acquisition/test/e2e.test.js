@@ -357,7 +357,9 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Merci pour tout, super journée'), '😊');
   assert.equal(reactionFor('Grand beau sur les pistes'), '☀️');
   assert.equal(reactionFor('Le téléphérique est fermé à cause du vent ?'), '🙏');
-  assert.equal(reactionFor('Bonjour'), '👍');
+  assert.equal(reactionFor('Bonjour'), '👋');
+  assert.equal(reactionFor('Hey LEMO !'), '👋');
+  assert.equal(reactionFor('Quelle heure ?'), '👍');
 });
 
 test('invitation : page d’aperçu avec logo, redirection WhatsApp, réponse à « Hey LEMO »', async () => {

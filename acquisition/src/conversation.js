@@ -89,6 +89,7 @@ export function reactionFor(text) {
   const t = norm(text);
   if (!t.trim()) return '👍';
   if (/probleme|panne|attente|queue|bloque|colere|inadmissible|decu|deception|nul|scandale|dangereux|peur|malaise|ferme|arrete|pas content|dommage|gache|bouscul|accident|blesse/.test(t)) return '🙏';
+  if (/^(hey|salut|bonjour|bonsoir|hello|coucou|hi)\b/.test(t.trim())) return '👋';
   if (/neige|poudreuse|flocon|enneige/.test(t)) return '❄️';
   if (/soleil|grand beau|ciel bleu|ensoleille/.test(t)) return '☀️';
   if (/vent|tempete|rafale/.test(t)) return '🌬️';

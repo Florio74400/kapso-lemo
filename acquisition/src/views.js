@@ -175,26 +175,3 @@ $('preset').onchange=e=>{const v=e.target.value;if(v==='owner'){$('phone').value
 $('phone').onchange=refresh;refresh();setInterval(refresh,3000);
 </script>`;
 }
-
-// Page d'invitation : balises Open Graph pour l'aperçu WhatsApp, puis redirection vers la conversation.
-export function invitePage({ wa, base }) {
-  const title = 'Vous êtes invité sur LEMO';
-  const desc = "Invitation privée d'un membre LEMO. Rien à installer : la conversation s'ouvre directement sur WhatsApp.";
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(desc)}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="LEMO">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:image" content="${esc(base)}/public/lemo-invite.png">
-<meta property="og:image:width" content="600"><meta property="og:image:height" content="600">
-<meta property="og:url" content="${esc(base)}/i">
-<meta name="twitter:card" content="summary">
-<meta http-equiv="refresh" content="0;url=${esc(wa)}">
-<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:16px system-ui,sans-serif;background:#fff;color:#111;text-align:center}
-img{width:160px}a{display:inline-block;margin-top:24px;padding:12px 22px;border-radius:999px;background:#111;color:#fff;text-decoration:none}</style>
-</head><body><div><img src="/public/lemo-invite.png" alt="LEMO"><p>Ouverture de WhatsApp…</p><a href="${esc(wa)}">Ouvrir la conversation</a></div>
-<script>location.replace(${JSON.stringify(wa)});</script></body></html>`;
-}

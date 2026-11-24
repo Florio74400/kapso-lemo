@@ -9,6 +9,7 @@ import { handleInbound, createCollection, waLink, phoneHash, drainQueues } from 
 import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
+import { invitePage } from './invite-page.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
 import { PRESETS, presetConfig } from './optins.js';
 
@@ -88,7 +89,7 @@ export function createApp() {
   app.use('/public', express.static(new URL('../public', import.meta.url).pathname, { maxAge: '7d' }));
   app.get(['/i', '/i/:code'], (_req, res) => {
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
-    res.send(V.invitePage({ wa, base: config.publicUrl }));
+    res.send(invitePage({ wa, base: config.publicUrl }));
   });
 
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
