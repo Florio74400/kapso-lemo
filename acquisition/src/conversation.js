@@ -113,8 +113,10 @@ async function route(msg) {
 
   // 0. Outil d'acquisition : accueil des early adopters (« Hey LEMO, c'est Florio ! »), puis leur première expérience
   if (onboarding.HEY_RE.test(text)) return onboarding.welcome(msg);
-  const newMember = await onboarding.awaitingExperience(msg.phone);
-  if (newMember && !STOP_RE.test(text)) return onboarding.receiveExperience(msg, newMember);
+  const newMember = await onboarding.inProgress(msg.phone);
+  if (newMember && !STOP_RE.test(text)) {
+    return newMember.state === 'awaiting_blindspot' ? onboarding.receiveBlindspot(msg, newMember) : onboarding.receiveExperience(msg, newMember);
+  }
 
   // 1. Désabonnement
   if (msg.kind === 'text' && STOP_RE.test(text)) return optOut(msg, hash);

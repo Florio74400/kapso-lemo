@@ -73,6 +73,12 @@ export async function sendTemplate(to, name, params, language = 'fr') {
   });
 }
 
+// Image par lien public (PNG/JPEG), avec légende.
+export async function sendImage(to, link, caption) {
+  if (!kapsoLive()) return { simulated: true };
+  return post({ to, type: 'image', image: { link, ...(caption ? { caption } : {}) } });
+}
+
 // Marque le message comme lu et affiche « en train d'écrire » (disparaît à l'envoi de la réponse ou après ~25 s).
 export async function showTyping(messageId) {
   if (!kapsoLive() || !messageId) return { simulated: true };

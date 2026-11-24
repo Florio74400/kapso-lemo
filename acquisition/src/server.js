@@ -10,6 +10,7 @@ import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
+import { cardPng } from './card.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
 import { PRESETS, presetConfig } from './optins.js';
 
@@ -87,6 +88,15 @@ export function createApp() {
   // Page d'aperçu (logo + titre) lue par WhatsApp quand le lien est partagé, puis redirection
   // immédiate vers la conversation WhatsApp avec « Hey LEMO ! » prérempli. Rien à installer.
   app.use('/public', express.static(new URL('../public', import.meta.url).pathname, { maxAge: '7d' }));
+  // Schéma personnalisé envoyé sur WhatsApp à la fin de la première expérience (adresse non devinable).
+  app.get('/m/:file', async (req, res) => {
+    const token = req.params.file.replace(/\.png$/, '');
+    const m = token.length >= 12 ? await one(`select first_name, report from members where card_token=$1`, [token]) : null;
+    if (!m?.report) return res.status(404).send('Introuvable');
+    const report = typeof m.report === 'string' ? JSON.parse(m.report) : m.report;
+    res.set('Content-Type', 'image/png').set('Cache-Control', 'public, max-age=86400').send(cardPng(report, m.first_name));
+  });
+
   app.get(['/i', '/i/:code'], (req, res) => {
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
     res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, variant: req.query.v }));

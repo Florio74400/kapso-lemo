@@ -377,10 +377,35 @@ test('invitation : page avec prénom, accueil early adopter sur WhatsApp, premi�
   assert.equal(outs.length, 4, 'quatre messages d’accueil');
   assert.match(outs[0].body, /^Hello Florio\. Je suis LEMO/);
   assert.match(outs[1].body, /3 invitations/);
-  assert.match(outs[3].body, /Raconte-moi une expérience récente/);
+  assert.match(outs[3].body, /événement marquant de ta journée/);
+  // Événement marquant -> relance sur un angle mort
   await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');
-  assert.equal(await lastOut(P), 'Très bien continuons le dev maintenant !');
-  const m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
+  assert.match(await lastOut(P), /\?/);
+  let m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
   assert.equal(m.first_name, 'Florio');
+  assert.equal(m.state, 'awaiting_blindspot');
   assert.match(m.experience, /déjeuner avec un client/);
+  // Réponse à la relance -> restitution : schéma, ce que LEMO a capté, comparaison enquête J+4
+  await say(P, "Quand il a reconnu que notre proposition l'avait surpris, tout s'est détendu.");
+  m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(m.state, 'experienced');
+  assert.ok(m.card_token && m.report);
+  const after = await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(P)]);
+  const tail = after.slice(-5).map((r) => r.body);
+  assert.match(tail[1], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
+  assert.match(tail[2], /Ce que LEMO a capté/);
+  assert.match(tail[3], /enquête de satisfaction à J\+4/);
+  assert.match(tail[3], /signaux contre 2.*×\d/);
+  assert.equal(tail[4], 'Très bien continuons le dev maintenant !');
+  const card = await fetch(`${base}/m/${m.card_token}.png`);
+  assert.equal(card.status, 200);
+  assert.equal(card.headers.get('content-type'), 'image/png');
+  assert.ok((await card.arrayBuffer()).byteLength > 10000);
+  assert.equal((await fetch(`${base}/m/inconnu-123456789.png`)).status, 404);
+});
+
+test('citation : affichée seulement si elle existe mot pour mot', async () => {
+  const { verifiedQuote } = await import('../src/onboarding.js');
+  assert.equal(verifiedQuote('tout s’est détendu', "Puis tout s'est détendu."), 'tout s’est détendu');
+  assert.equal(verifiedQuote('une phrase inventée', 'Rien à voir.'), null);
 });

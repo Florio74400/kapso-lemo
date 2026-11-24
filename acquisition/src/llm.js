@@ -302,3 +302,57 @@ function simDataAnswer(data, periodLabel) {
     items_used: lines.length,
   };
 }
+
+// ================= Outil d'acquisition : expérience d'un early adopter =================
+export const BlindSpotQuestion = z.object({
+  question: z.string().describe('Une seule question de relance, 25 mots maximum, tutoiement.'),
+});
+
+export async function blindSpotQuestion({ experience, firstName }) {
+  if (llmMode() === 'simulated') {
+    return { question: "Et à quel moment précis ton ressenti a basculé ? Qu'est-ce qui l'a provoqué, même un petit détail ?" };
+  }
+  return structured(
+    BlindSpotQuestion,
+    `Tu es LEMO, moteur d'analyse émotionnelle. ${firstName || 'La personne'} vient de raconter un événement marquant de sa journée.
+Pose UNE question de relance qui fait émerger un ANGLE MORT : ce qu'une enquête de satisfaction classique n'aurait jamais capté.
+Pistes : le moment précis où le ressenti a basculé, un petit détail qui a tout changé, ce qu'elle attendait sans le dire, ce qu'elle n'aurait pas écrit dans un questionnaire.
+Appuie-toi sur un élément concret de son récit. Question ouverte (pas de oui/non), 25 mots maximum, tutoiement, ton chaleureux et sobre, sans emoji.
+${GROUNDING}`,
+    `<recit>${experience}</recit>`,
+  );
+}
+
+export const ExperienceReport = z.object({
+  emotions: z.array(z.object({ emotion: z.string().describe('1 ou 2 mots, en minuscules.'), moment: z.string().describe('Quand, 6 mots maximum.') })).describe('1 à 3 émotions, dans l’ordre chronologique.'),
+  key_moment: z.string().nullable().describe('Le point de bascule, 15 mots maximum. null si absent.'),
+  blind_spot: z.string().describe('Ce qu’une enquête de satisfaction n’aurait pas capté, 20 mots maximum.'),
+  details: z.array(z.string()).describe('0 à 5 signaux concrets (cause, attente, irritant, suggestion), 8 mots maximum chacun.'),
+  quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT du récit, 15 mots maximum. null si rien de parlant.'),
+  survey_score: z.number().int().describe('Note sur 10 typique qu’une personne donnerait à J+4 pour ce type de moment.'),
+  survey_comment: z.string().describe('Commentaire typique à J+4, 5 mots maximum, banal (ex : « Bien, rien à signaler. »).'),
+});
+
+export async function experienceReport({ experience, followup, answer }) {
+  if (llmMode() === 'simulated') {
+    return {
+      emotions: [{ emotion: 'agacement', moment: 'au début' }, { emotion: 'soulagement', moment: 'à la fin' }],
+      key_moment: 'Le moment où la situation s’est débloquée',
+      blind_spot: 'Ce qui a fait basculer le ressenti, invisible dans une note',
+      details: ['attente au départ', 'échange humain décisif'],
+      quote: null,
+      survey_score: 7,
+      survey_comment: 'Bien, rien à signaler.',
+    };
+  }
+  return structured(
+    ExperienceReport,
+    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. Analyse le récit d'une personne (événement marquant + réponse à une relance).
+Extrais ce que LEMO capte pendant l'expérience : émotions et moments, point de bascule, angle mort, signaux concrets, une citation exacte.
+Puis indique ce qu'une enquête de satisfaction envoyée 4 jours après obtient TYPIQUEMENT pour ce genre de moment (note et commentaire banal) : le souvenir lisse le vécu.
+Tout ce qui concerne LEMO vient UNIQUEMENT du récit. Phrases très courtes, en français.
+${GROUNDING}`,
+    `<recit>${experience}</recit>\n<relance>${followup}</relance>\n<reponse>${answer}</reponse>`,
+    'medium',
+  );
+}
