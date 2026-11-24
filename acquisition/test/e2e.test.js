@@ -370,12 +370,12 @@ test('invitation : page avec prénom, accueil early adopter sur WhatsApp, premi�
   assert.match(page, /wa\.me\/\d*\?text=Hey%20LEMO%20!/);
   const img = await fetch(`${base}/public/lemo-invite.png`);
   assert.equal(img.headers.get('content-type'), 'image/png');
-  assert.match(page, /Ton prénom/);
+  assert.match(page, /placeholder="Prénom"/);
   const P = '33688881111';
   await say(P, "Hey LEMO, c'est florio !");
   const outs = await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(P)]);
   assert.equal(outs.length, 4, 'quatre messages d’accueil');
-  assert.match(outs[0].body, /^Hi Florio\. Je suis LEMO/);
+  assert.match(outs[0].body, /^Hello Florio\. Je suis LEMO/);
   assert.match(outs[1].body, /3 invitations/);
   assert.match(outs[3].body, /Raconte-moi une expérience récente/);
   await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');

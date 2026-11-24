@@ -4,6 +4,9 @@
 //   2. Balayage : une ligne de lecture parcourt la sphère et révèle des valeurs ; compteur de moments analysés.
 //   3. Noyau : anneau de mesure qui tourne en sens inverse, avec des indicateurs qui défilent.
 
+import fs from 'node:fs';
+
+const logoSvg = fs.readFileSync(new URL('../public/lemo-logo.svg', import.meta.url), 'utf8');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export function invitePage({ wa, waNumber = '', base, variant = 1, delayMs = 3000 }) {
@@ -31,28 +34,39 @@ html,body{height:100%;background:#fff;color:#1A1A1A;overflow:hidden}
 body{font-family:"Montserrat","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
 canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
 .text{position:fixed;left:0;right:0;text-align:center;z-index:2;opacity:0;animation:in 1.2s .35s ease forwards}
-.kicker{font-size:10px;font-weight:600;letter-spacing:.38em;text-transform:uppercase;color:#4553C7;padding-left:.38em}
-.title{margin-top:8px;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.kicker{font-size:11px;font-weight:600;letter-spacing:.38em;text-transform:uppercase;color:#4553C7;padding-left:.38em}
+.title{margin-top:10px;font-size:26px;font-weight:700;letter-spacing:-.02em}
 .counter{margin-top:14px;font:500 10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.12em;color:#888}
+canvas,.text{transition:opacity .8s ease}
+.gone{opacity:0!important;pointer-events:none}
 .veil{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .4s ease;z-index:5}
 .veil.on{opacity:1}
-.ask{margin-top:22px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;opacity:0;transform:translateY(6px);transition:opacity .6s ease,transform .6s ease;pointer-events:none}
-.ask.on{opacity:1;transform:none;pointer-events:auto}
-.ask input{font:500 15px "Montserrat",Arial,sans-serif;width:200px;padding:12px 18px;border:1px solid #DADBE6;border-radius:999px;background:rgba(255,255,255,.9);color:#1A1A1A;outline:none;text-align:center;-webkit-appearance:none}
-.ask input:focus{border-color:#6B7CFF;box-shadow:0 0 0 4px rgba(107,124,255,.12)}
-.ask button{font:600 15px "Montserrat",Arial,sans-serif;padding:12px 22px;border:0;border-radius:999px;color:#fff;background:linear-gradient(90deg,#4553C7,#E8856B);cursor:pointer}
-.ask button:disabled{opacity:.5}
-.hello{display:none}.hello.on{display:block;animation:in .7s ease forwards;opacity:0}
-.hello .title{font-size:22px}.hello .sub{margin-top:8px;font-size:14px;color:#555;line-height:1.5;padding:0 24px}
+.panel{position:fixed;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;opacity:0;pointer-events:none;transition:opacity .8s ease}
+.panel.on{opacity:1;pointer-events:auto}
+.panel .logo{color:#1A1A1A}.panel .logo svg{height:30px;width:auto;display:block}
+.panel h2{margin-top:30px;font-size:22px;line-height:1.3;font-weight:600;letter-spacing:-.015em}
+.panel h2 .light{display:block;font-weight:300;color:#888}
+.panel form{margin-top:30px;width:100%;max-width:320px;display:flex;flex-direction:column;gap:10px}
+.panel input{font:500 16px "Montserrat",Arial,sans-serif;width:100%;padding:14px 16px;border:1px solid #E2E2E8;border-radius:10px;background:#fff;color:#1A1A1A;outline:none;text-align:center;-webkit-appearance:none}
+.panel input::placeholder{color:#A8A8B4}
+.panel input:focus{border-color:#6B7CFF;box-shadow:0 0 0 4px rgba(107,124,255,.12)}
+.panel button{font:600 15px "Montserrat",Arial,sans-serif;width:100%;padding:14px 16px;border:0;border-radius:10px;color:#fff;background:#1A1A1A;cursor:pointer}
+.panel button:disabled{opacity:.6}
+.panel .hello{display:none}.panel.hi form,.panel.hi .welcome{display:none}.panel.hi .hello{display:block;animation:in .6s ease forwards;opacity:0}
+.panel .hello .sub{margin-top:10px;font-size:15px;color:#555;line-height:1.5}
 @keyframes in{to{opacity:1}}
-@media (min-width:900px){.kicker{font-size:11px}.title{font-size:20px}}
+@media (min-width:900px){.kicker{font-size:12px}.title{font-size:34px}.panel .logo svg{height:36px}.panel h2{font-size:26px}}
 @media (prefers-reduced-motion:reduce){.text{animation:none;opacity:1}}
 </style>
 </head><body>
 <canvas id="cv" aria-hidden="true"></canvas>
-<div class="text" id="text"><div id="intro"><div class="kicker">Invitation</div><div class="title">Bienvenue dans LEMO</div>${v === 2 ? '<div class="counter" id="counter">MOMENTS ANALYSÉS 0</div>' : ''}
-<form class="ask" id="ask" autocomplete="on"><input id="name" name="given-name" autocomplete="given-name" placeholder="Ton prénom" maxlength="30" required aria-label="Ton prénom"><button type="submit">Continuer</button></form></div>
-<div class="hello" id="hello"><div class="kicker">Early adopter</div><div class="title">Hello <span id="hn"></span>,</div><div class="sub">tu as reçu une invitation personnelle early adopter.</div></div></div>
+<div class="text" id="text"><div class="kicker">Invitation</div><div class="title">Bienvenue dans LEMO</div>${v === 2 ? '<div class="counter" id="counter">MOMENTS ANALYSÉS 0</div>' : ''}</div>
+<section class="panel" id="panel" aria-live="polite">
+  <div class="logo">${logoSvg}</div>
+  <h2 class="welcome">Bienvenue dans LEMO.<span class="light">Invitation personnelle</span></h2>
+  <form id="ask" autocomplete="on"><input id="name" name="given-name" autocomplete="given-name" placeholder="Prénom" maxlength="30" required aria-label="Prénom"><button type="submit">Continuer</button></form>
+  <div class="hello"><h2>Hello <span id="hn"></span>,</h2><p class="sub">tu as reçu une invitation personnelle<br>early adopter.</p></div>
+</section>
 <div class="veil" id="veil"></div>
 <script>
 (function(){
@@ -109,13 +123,17 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
     ctx.font='500 '+(mobile?9:10)+'px '+MONO;ctx.textBaseline='middle';
     if(V===1){
       // halo blanc derrière le texte central
-      var wg=ctx.createRadialGradient(CX,CY,0,CX,CY,RR*0.62);wg.addColorStop(0,'rgba(255,255,255,0.92)');wg.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.fillStyle=wg;ctx.beginPath();ctx.arc(CX,CY,RR*0.62,0,Math.PI*2);ctx.fill();
+      var wg=ctx.createRadialGradient(CX,CY,0,CX,CY,RR*0.75);wg.addColorStop(0,'rgba(255,255,255,0.92)');wg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=wg;ctx.beginPath();ctx.arc(CX,CY,RR*0.75,0,Math.PI*2);ctx.fill();
+      var placed=[];
       tagged.forEach(function(tg){
         var life=(t-tg.t0)/1.5;if(life<0||life>1)return;
         var q=proj[tg.i];if(q[2]>0.2){tg.i=(tg.i+37)%N;return}
         var persp=1/(1+q[2]*0.34),X=CX+q[0]*RR*persp,Y=CY+q[1]*RR*persp;
         var al=Math.sin(Math.PI*life)*0.9,side=X<CX?-1:1,lx=X+side*(18+RR*0.08),ly=Y-14;
+        if(Math.abs(ly-CY)<(mobile?46:60)){tg.i=(tg.i+37)%N;return} // jamais sur le titre
+        if(placed.some(function(o){return o[0]===side&&Math.abs(o[1]-ly)<22}))return; // pas deux étiquettes l'une sur l'autre
+        placed.push([side,ly]);
         ctx.strokeStyle='rgba(69,83,199,'+(al*0.45)+')';ctx.lineWidth=0.7;ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(lx,ly);ctx.stroke();
         ctx.beginPath();ctx.arc(X,Y,2.4,0,Math.PI*2);ctx.fillStyle='rgba(232,115,79,'+al+')';ctx.fill();
         ctx.fillStyle='rgba(47,61,168,'+al+')';label(tg.label,lx+side*4,ly,side<0?'right':'left');
@@ -152,9 +170,9 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  // Prénom : le formulaire apparaît après l'introduction animée.
-  var ask=document.getElementById('ask'),inp=document.getElementById('name');
-  setTimeout(function(){ask.classList.add('on')},reduced?0:1800);
+  // Après l'animation : la sphère s'efface, l'écran d'accueil épuré apparaît.
+  var panel=document.getElementById('panel'),ask=document.getElementById('ask'),inp=document.getElementById('name');
+  setTimeout(function(){cv.classList.add('gone');txt.classList.add('gone');panel.classList.add('on')},reduced?0:DELAY);
   ask.addEventListener('submit',function(e){
     e.preventDefault();
     var n=(inp.value||'').trim().replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' -]/g,'').slice(0,30);
@@ -162,8 +180,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
     n=n.charAt(0).toUpperCase()+n.slice(1);
     inp.blur();ask.querySelector('button').disabled=true;
     document.getElementById('hn').textContent=n;
-    document.getElementById('intro').style.display='none';
-    document.getElementById('hello').classList.add('on');
+    panel.classList.add('hi');
     var url=NUM?('https://wa.me/'+NUM+'?text='+encodeURIComponent("Hey LEMO, c'est "+n+' !')):WA;
     // le temps de lire le message, puis ouverture de WhatsApp
     setTimeout(function(){document.getElementById('veil').classList.add('on')},2300);

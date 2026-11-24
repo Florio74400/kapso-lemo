@@ -27,7 +27,7 @@ export async function welcome(msg) {
     [hash, msg.phone, name, INVITES_PER_MEMBER],
   );
   const lines = [
-    `Hi${name ? ` ${name}` : ''}. Je suis LEMO, le moteur d'analyse émotionnelle en temps réel : avant, pendant et après chaque expérience.`,
+    `Hello${name ? ` ${name}` : ''}. Je suis LEMO, le moteur d'analyse émotionnelle en temps réel : avant, pendant et après chaque expérience.`,
     `LEMO est en accès sur invitation uniquement. Tu disposes de ${INVITES_PER_MEMBER} invitations, débloquées après ta première expérience.`,
     "Le plus simple pour comprendre, c'est d'essayer.",
     'Raconte-moi une expérience récente : un rendez-vous, un repas, un moment de ta journée. Par écrit ou en vocal.',
