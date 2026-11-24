@@ -1,15 +1,15 @@
-/* Page d'invitation LEMO (refonte du 24/11/2026) : prénom -> « Bonjour <prénom>. » -> WhatsApp.
+/* Page d'invitation LEMO : « Bienvenue, Florio t'invite sur LEMO. » -> Commencer -> prénom -> WhatsApp.
    Un seul élément signature : l'orbe (≈180 points, canvas 2D).
    - écran 1 : sphère qui tourne lentement ; chaque frappe allume un point et accélère la rotation (« l'orbe écoute »)
    - validation : l'orbe se contracte, puis se déplie de gauche à droite en onde de message vocal
-   - écran 2 : l'onde reste vivante tant que la page est ouverte
+   - puis WhatsApp s'ouvre aussitôt
    Configuration injectée par le serveur dans <script id="cfg" type="application/json">. */
 (function () {
   'use strict';
   var CFG = JSON.parse(document.getElementById('cfg').textContent);
   var qs = new URLSearchParams(location.search);
   var DEMO = qs.get('demo') === '1'; // ?demo=1 : aperçu sans redirection
-  var REDIRECT_DELAY = 2400; // ms, durée de l'écran « Bonjour » avant redirection
+  var REDIRECT_DELAY = 1800; // ms : le temps de voir l'orbe se déplier en onde, puis WhatsApp
   // Le message prérempli « Hey LEMO, c'est <prénom> ! » est celui que LEMO reconnaît pour lancer l'accueil.
   var WA_TEXT = function (prenom) { return "Hey LEMO, c'est " + prenom + ' !' + (CFG.code ? ' (invitation ' + CFG.code + ')' : ''); };
   var waLink = function (prenom) { return CFG.waNumber ? 'https://wa.me/' + CFG.waNumber + '?text=' + encodeURIComponent(WA_TEXT(prenom)) : CFG.wa; };
@@ -115,23 +115,36 @@
     ctx.globalAlpha = 1;
   };
 
-  /* ---------- Parcours ---------- */
+  /* ---------- Parcours : Commencer -> prénom -> onde -> WhatsApp ---------- */
   var $ = function (id) { return document.getElementById(id); };
   var orb = new Orb($('orb'));
-  var s1 = $('s1'), s2 = $('s2'), form = $('form'), input = $('prenom'), note = $('note');
-  var fill = $('fill'), fallback = $('fallback'), statusLabel = $('statusLabel');
-  var NOTE_DEFAULT = note.textContent;
-  var timer = null;
+  var s1 = $('s1'), s2 = $('s2'), s3 = $('s3'), form = $('form'), input = $('prenom'), fallback = $('fallback');
+  var timers = [];
   var tracked = false;
 
   var clean = function (v) { return v.replace(/\s+/g, ' ').trim().replace(/[^\p{L}' -]/gu, '').slice(0, 24); };
   var capitalize = function (v) { return v.replace(/(^|[\s-])(\p{L})/gu, function (m, a, b) { return a + b.toLocaleUpperCase('fr-FR'); }); };
 
+  // Passe d'un écran à l'autre en fondu.
+  function show(from, to, after) {
+    from.classList.add('is-out');
+    setTimeout(function () {
+      from.hidden = true;
+      to.hidden = false; to.classList.add('is-pre'); to.classList.remove('is-out');
+      void to.offsetWidth;
+      to.classList.remove('is-pre');
+      if (after) after();
+    }, 320);
+  }
+
+  $('start').addEventListener('click', function () {
+    orb.ping();
+    show(s1, s2, function () { input.focus({ preventScroll: true }); });
+  });
+
   input.addEventListener('input', function () {
     orb.ping();
-    if (form.classList.contains('is-error')) {
-      form.classList.remove('is-error'); note.classList.remove('is-error'); note.textContent = NOTE_DEFAULT;
-    }
+    form.classList.remove('is-error');
   });
 
   form.addEventListener('submit', function (e) {
@@ -139,7 +152,6 @@
     var prenom = capitalize(clean(input.value));
     if (!prenom) {
       form.classList.remove('is-error'); void form.offsetWidth; form.classList.add('is-error');
-      note.classList.add('is-error'); note.textContent = 'Indiquez votre prénom pour continuer.';
       input.focus();
       return;
     }
@@ -147,69 +159,35 @@
       tracked = true;
       try { navigator.sendBeacon && navigator.sendBeacon('/i/evt?k=continue' + (CFG.code ? '&c=' + encodeURIComponent(CFG.code) : '')); } catch (_) {}
     }
-    toBonjour(prenom);
+    go(prenom);
   });
 
-  function renderName(prenom) {
-    var el = $('name');
-    el.textContent = '';
-    Array.from(prenom + '.').forEach(function (ch, i) {
-      var s = document.createElement('span');
-      s.className = 'ch'; s.style.setProperty('--i', i); s.textContent = ch;
-      el.appendChild(s);
-    });
-    el.setAttribute('aria-label', prenom + '.');
-    $('nameInline').textContent = prenom;
-  }
-
-  function toBonjour(prenom) {
+  // L'orbe se contracte puis se déplie en onde vocale, et WhatsApp s'ouvre aussitôt.
+  function go(prenom) {
     input.blur();
     orb.gather();
-    s1.classList.add('is-out');
-    renderName(prenom);
     fallback.href = waLink(prenom);
-    setTimeout(function () {
-      s1.hidden = true;
-      s2.hidden = false; s2.classList.remove('is-in');
-      statusLabel.textContent = 'Ouverture de WhatsApp';
-      fallback.classList.remove('is-visible');
-      $('status').classList.remove('is-done');
-      fill.classList.remove('is-running');
-      void s2.offsetWidth;
-      s2.classList.add('is-in');
-      orb.toWave();
-      // barre d'ouverture
-      fill.style.setProperty('--dur', REDIRECT_DELAY + 'ms');
-      requestAnimationFrame(function () { requestAnimationFrame(function () { fill.classList.add('is-running'); }); });
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        if (!DEMO) window.location.replace(waLink(prenom));
-        // si WhatsApp ne s'ouvre pas (iOS, navigateur intégré), le bouton prend le relais
-        setTimeout(function () {
-          statusLabel.textContent = 'WhatsApp ne s’est pas ouvert ?';
-          $('status').classList.add('is-done');
-          fallback.classList.add('is-visible');
-        }, DEMO ? 0 : 900);
-      }, REDIRECT_DELAY + 500);
-    }, 340);
+    fallback.classList.remove('is-visible');
+    show(s2, s3, function () { orb.toWave(); });
+    timers.forEach(clearTimeout);
+    timers = [
+      setTimeout(function () { if (!DEMO) window.location.replace(waLink(prenom)); }, REDIRECT_DELAY),
+      // si WhatsApp ne s'ouvre pas (iOS, navigateur intégré), un bouton discret prend le relais
+      setTimeout(function () { fallback.classList.add('is-visible'); }, REDIRECT_DELAY + 1800),
+    ];
   }
 
-  function toInvitation() {
-    clearTimeout(timer);
+  function reset() {
+    timers.forEach(clearTimeout);
     orb.toSphere();
-    s2.classList.remove('is-in');
-    s2.hidden = true;
-    s1.hidden = false;
-    void s1.offsetWidth;
-    s1.classList.remove('is-out');
-    input.focus({ preventScroll: true });
-    input.select();
+    [s2, s3].forEach(function (el) { el.hidden = true; el.classList.remove('is-out'); });
+    s1.hidden = false; s1.classList.remove('is-out');
+    input.value = '';
   }
-
-  $('edit').addEventListener('click', toInvitation);
-  $('home').addEventListener('click', function (e) { e.preventDefault(); toInvitation(); input.value = ''; });
+  $('home').addEventListener('click', function (e) { e.preventDefault(); reset(); });
   fallback.addEventListener('click', function (e) { if (DEMO) e.preventDefault(); });
+  addEventListener('pageshow', function (e) { if (e.persisted) fallback.classList.add('is-visible'); });
 
-  // Aperçu : ?demo=1&step=bonjour&prenom=Florio ouvre directement l'écran 2, sans redirection
-  if (DEMO && qs.get('step') === 'bonjour') toBonjour(capitalize(clean(qs.get('prenom') || 'Florio')));
+  // Aperçu : ?demo=1&step=onde&prenom=Florio montre directement l'onde, sans redirection
+  if (DEMO && qs.get('step') === 'onde') { s1.hidden = true; s2.hidden = false; go(capitalize(clean(qs.get('prenom') || 'Florio'))); }
 })();

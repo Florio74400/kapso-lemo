@@ -104,7 +104,7 @@ export function createApp() {
     res.sendStatus(204);
   });
 
-  // Lien général (/i) ou lien personnel d'un membre (/i/CODE : « Invitation personnelle de Marc »).
+  // Lien général (/i : « Florio t'invite sur LEMO ») ou lien personnel d'un membre (/i/CODE : « Marc t'invite sur LEMO »).
   app.get(['/i', '/i/:code'], async (req, res) => {
     let code = null;
     let inviter = null;
@@ -117,7 +117,7 @@ export function createApp() {
       await query(`insert into invite_events (kind, code) values ('view',$1)`, [code]).catch(() => {});
     }
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
-    res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, inviter, code }));
+    res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, inviter: inviter || config.founderName, code }));
   });
 
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {

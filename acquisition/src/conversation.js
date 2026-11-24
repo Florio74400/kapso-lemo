@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { config, llmMode } from './config.js';
 import { query, one } from './db.js';
-import { sendText, sendButtons, sendList, showTyping, sendReaction } from './kapso.js';
+import { sendText, sendButtons, sendList, sendCtaUrl, showTyping, sendReaction } from './kapso.js';
 import * as alerts from './alerts.js';
 import * as onboarding from './onboarding.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
@@ -42,13 +42,14 @@ export async function drainQueues() {
 }
 
 // --- Envoi + journalisation
-export async function reply(phone, body, { sessionId = null, companyId = null, buttons = null, list = null } = {}) {
+export async function reply(phone, body, { sessionId = null, companyId = null, buttons = null, list = null, cta = null } = {}) {
   await query(
     `insert into messages (session_id, company_id, direction, role, phone_hash, kind, body) values ($1,$2,'out','lemo',$3,$4,$5)`,
-    [sessionId, companyId, phoneHash(phone), buttons || list ? 'interactive' : 'text', body],
+    [sessionId, companyId, phoneHash(phone), buttons || list || cta ? 'interactive' : 'text', cta ? `${body}\n[${cta.text}] ${cta.url}` : body],
   );
   try {
-    if (buttons) await sendButtons(phone, body, buttons);
+    if (cta) await sendCtaUrl(phone, body, cta.text, cta.url, cta.footer);
+    else if (buttons) await sendButtons(phone, body, buttons);
     else if (list) await sendList(phone, body, list.button, list.rows);
     else await sendText(phone, body);
   } catch (err) {

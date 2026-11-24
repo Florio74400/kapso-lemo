@@ -1,14 +1,13 @@
 // Outil d'acquisition : accueil des early adopters arrivés par le lien d'invitation.
 // « Hey LEMO, c'est Florio ! » -> présentation -> événement marquant -> relance angle mort
-// -> récit : le moment vu par LEMO face à une enquête à J+4 -> alerte au fondateur (message prêt).
+// -> synthèse « Vu par LEMO » face à une enquête à J+4 -> 5 invitations (bouton de transfert, message prêt).
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound, phoneHash } from './conversation.js';
 import { blindSpotQuestion, experienceReport } from './llm.js';
-import { richness } from './card.js';
 
-export const INVITES_PER_MEMBER = 3;
+export const INVITES_PER_MEMBER = 5;
 const PAUSE_MS = Number(process.env.ONBOARDING_PAUSE_MS ?? 900); // rythme entre les messages, comme une vraie conversation
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,7 +41,7 @@ export async function welcome(msg) {
   await query(
     `insert into members (phone_hash, phone, first_name, invites_total, invited_by) values ($1,$2,$3,$4,$5)
      on conflict (phone_hash) do update set phone=excluded.phone, first_name=coalesce(excluded.first_name, members.first_name),
-       invited_by=coalesce(members.invited_by, excluded.invited_by), state='awaiting_experience', updated_at=now()`,
+       invited_by=coalesce(members.invited_by, excluded.invited_by), invites_total=excluded.invites_total, state='awaiting_experience', updated_at=now()`,
     [hash, msg.phone, name, INVITES_PER_MEMBER, inviter?.id || null],
   );
   const lines = [
@@ -86,8 +85,12 @@ export function verifiedQuote(quote, ...sources) {
   return q.length >= 8 && sources.some((s) => norm(s).includes(q)) ? String(quote).trim().replace(/^[«"“\s]+|[»"”\s]+$/g, '') : null;
 }
 
-// Étape 2 : la réponse à la relance -> un seul message, raconté comme une histoire :
-// le moment vu par LEMO, puis ce qu'une enquête de satisfaction à J+4 en aurait gardé.
+// En dessous, le récit est trop maigre pour une analyse honnête : LEMO le dit et analyse un exemple.
+export const THIN_WORDS = 25;
+const words = (t) => String(t || '').split(/\s+/).filter(Boolean).length;
+
+// Étape 2 : la réponse à la relance -> synthèse « Vu par LEMO » / « Enquête de satisfaction · J+4 »,
+// puis les invitations (bouton qui ouvre WhatsApp avec le message prêt à transférer).
 export async function receiveBlindspot(msg, member) {
   if (!(await recordInbound(msg, { role: 'respondent' }))) return 'ignored:duplicate';
   const answer = spoken(msg);
@@ -95,10 +98,11 @@ export async function receiveBlindspot(msg, member) {
     await reply(msg.phone, "Je n'ai pas pu lire ce message. Tu peux me répondre par écrit ou en vocal.");
     return 'onboarding_unreadable';
   }
-  const report = await experienceReport({ experience: member.experience, followup: member.followup, answer, firstName: member.first_name });
-  report.quote = verifiedQuote(report.quote, member.experience, answer);
+  const thin = words(member.experience) + words(answer) < THIN_WORDS;
+  const report = await experienceReport({ experience: member.experience, followup: member.followup, answer, firstName: member.first_name, thin });
+  report.thin = thin && Boolean(report.example);
+  report.quote = report.thin ? null : verifiedQuote(report.quote, member.experience, answer);
   const token = crypto.randomBytes(12).toString('base64url'); // fiche visuelle, consultable dans le CRM
-  // Invitations : code personnel préparé dès maintenant (envoi du lien : étape suivante, à définir).
   let code = member.invite_code;
   for (let i = 0; !code && i < 5; i++) {
     const candidate = newInviteCode();
@@ -106,34 +110,31 @@ export async function receiveBlindspot(msg, member) {
   }
   await query(`update members set blindspot=$2, report=$3, card_token=$4, invite_code=$5, state='experienced', updated_at=now() where id=$1`, [member.id, answer, JSON.stringify(report), token, code]);
 
-  await reply(msg.phone, storyMessage(report));
-  await notifyFounder({ ...member, blindspot: answer, report });
+  if (report.thin) {
+    await reply(msg.phone, `J'ai très peu d'informations sur ton moment. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« ${report.example} »_`);
+    await pause(PAUSE_MS);
+  }
+  await reply(msg.phone, synthesisMessage(report));
+  await pause(PAUSE_MS * 2);
+  const { body, cta } = inviteMessage({ firstName: member.first_name, total: member.invites_total, code });
+  await reply(msg.phone, body, { cta });
   return 'onboarding_report';
 }
 
-export function storyMessage(r) {
+// Synthèse lue sur WhatsApp : deux parties courtes, titres et libellés en gras.
+export function synthesisMessage(r) {
   return [
-    r.story_lemo,
-    r.story_survey,
-    `Avec LEMO, c'est *×${richness(r)} plus riche* qu'une enquête classique, et capté sur le moment : de quoi ajuster l'expérience, ou informer directement les équipes.`,
+    ['*Vu par LEMO*', ...(r.lemo_lines || []).map((l) => `*${l.label}* — ${l.text}`), r.quote ? `_« ${r.quote} »_` : null].filter(Boolean).join('\n'),
+    ['*Enquête de satisfaction · J+4*', `*${r.survey_score}/10* — « ${String(r.survey_comment).replace(/^[«"\s]+|[»"\s]+$/g, '')} »`, r.survey_lost].filter(Boolean).join('\n'),
   ].join('\n\n');
 }
 
-// Alerte au fondateur : qui, son moment, et un lien WhatsApp avec un message prêt, envoyé depuis son propre compte.
-export async function notifyFounder(m) {
-  if (!config.founderPhone) return;
-  const r = m.report || {};
-  const inviter = m.invited_by ? await one('select first_name from members where id=$1', [m.invited_by]) : null;
-  const body = [
-    '*Nouvel early adopter*',
-    `${m.first_name || 'Sans prénom'} · +${m.phone} · invité par ${inviter?.first_name || 'lien général'}`,
-    `Son moment : « ${String(m.experience || '').slice(0, 220)} »`,
-    r.blind_spot ? `Angle mort : ${r.blind_spot}` : null,
-    '',
-    'Lui écrire depuis ton WhatsApp, message prêt :',
-    `https://wa.me/${m.phone}?text=${encodeURIComponent(r.founder_message || '')}`,
-  ]
-    .filter((x) => x !== null)
-    .join('\n');
-  await reply(config.founderPhone, body);
+// Dernier message : les invitations. Le bouton ouvre WhatsApp, on choisit un contact, le message est prêt.
+export function inviteMessage({ firstName, total, code }) {
+  const link = `${config.publicUrl}/i/${code}`;
+  const share = `Je t'invite sur LEMO : la data émotionnelle en temps réel, en un message WhatsApp. Accès sur invitation uniquement, essaie : ${link}`;
+  return {
+    body: `Merci${firstName ? ` ${firstName}` : ''}. Tes ${total} invitations sont débloquées.\n\nFais vivre LEMO à ${total} personnes de ton choix : touche le bouton, choisis un contact, le message est prêt.`,
+    cta: { text: "Envoyer l'invitation", url: `https://wa.me/?text=${encodeURIComponent(share)}`, footer: `${total} invitations · lien personnel` },
+  };
 }

@@ -305,62 +305,75 @@ function simDataAnswer(data, periodLabel) {
 
 // ================= Outil d'acquisition : expérience d'un early adopter =================
 export const BlindSpotQuestion = z.object({
-  question: z.string().describe('Une seule question de relance, 25 mots maximum, tutoiement.'),
+  question: z.string().describe('La relance : une question, ou deux très courtes liées, 30 mots maximum, tutoiement.'),
 });
 
 export async function blindSpotQuestion({ experience, firstName }) {
   if (llmMode() === 'simulated') {
-    return { question: "Et à quel moment précis ton ressenti a basculé ? Qu'est-ce qui l'a provoqué, même un petit détail ?" };
+    return { question: "À quel instant précis ça a basculé ? Raconte-moi ce qui s'est passé juste avant, même un détail qui te paraît anodin." };
   }
   return structured(
     BlindSpotQuestion,
-    `Tu es LEMO, moteur d'analyse émotionnelle. ${firstName || 'La personne'} vient de raconter un événement marquant de sa journée.
-Pose UNE question de relance qui fait émerger un ANGLE MORT : ce qu'une enquête de satisfaction classique n'aurait jamais capté.
-Pistes : le moment précis où le ressenti a basculé, un petit détail qui a tout changé, ce qu'elle attendait sans le dire, ce qu'elle n'aurait pas écrit dans un questionnaire.
-Appuie-toi sur un élément concret de son récit. Question ouverte (pas de oui/non), 25 mots maximum, tutoiement, ton chaleureux et sobre, sans emoji.
+    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. ${firstName || 'La personne'} vient de répondre à « Peux-tu me décrire un événement marquant de ta journée ? ».
+Écris LA relance. Son rôle : ouvrir le champ des possibles et aller chercher les détails qu'une enquête de satisfaction ne capte jamais. Ni simpliste, ni scolaire.
+- Récit riche : creuse UN point précis de son récit. Par exemple l'instant exact où le ressenti a basculé, un détail concret (un geste, une phrase, une attente, un lieu), ce qu'elle espérait sans le dire, ce que ça a changé pour la suite de sa journée.
+- Récit vague ou très court : ne demande pas « peux-tu développer ». Pose une question précise et concrète sur un aspect typique de ce genre de moment (l'accueil, l'attente, une personne, l'ambiance, ce qui a fait la différence), qui donne envie de raconter.
+À éviter : « Comment t'es-tu senti ? », « Peux-tu en dire plus ? », toute question fermée (oui/non) ou à note.
+Une question, ou deux très courtes liées. 30 mots maximum. Tutoiement, ton chaleureux et sobre, sans emoji.
 ${GROUNDING}`,
     `<recit>${experience}</recit>`,
   );
 }
 
+const Line = z.object({
+  label: z.string().describe('1 ou 2 mots : Ressenti, Bascule, Angle mort, Détail, Attente…'),
+  text: z.string().describe('14 mots maximum, tutoiement, concret.'),
+});
+
 export const ExperienceReport = z.object({
+  example: z.string().nullable().describe('UNIQUEMENT si le récit est trop maigre : un exemple d’expérience bref (25 mots maximum), universel, valable pour tous les secteurs. null sinon.'),
   emotions: z.array(z.object({ emotion: z.string().describe('1 ou 2 mots, en minuscules.'), moment: z.string().describe('Quand, 6 mots maximum.') })).describe('1 à 3 émotions, dans l’ordre chronologique.'),
   key_moment: z.string().nullable().describe('Le point de bascule, 15 mots maximum. null si absent.'),
   blind_spot: z.string().describe('Ce qu’une enquête de satisfaction n’aurait pas capté, 20 mots maximum.'),
   details: z.array(z.string()).describe('0 à 5 signaux concrets (cause, attente, irritant, suggestion), 8 mots maximum chacun.'),
-  quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT du récit, 15 mots maximum. null si rien de parlant.'),
+  quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT du récit, 15 mots maximum. null si rien de parlant ou si on analyse un exemple.'),
+  lemo_lines: z.array(Line).describe('3 ou 4 lignes « Vu par LEMO », dans cet ordre : Ressenti (le début et la fin), Bascule, Angle mort, puis éventuellement un Détail.'),
   survey_score: z.number().int().describe('Note sur 10 typique qu’une personne donnerait à J+4 pour ce type de moment.'),
   survey_comment: z.string().describe('Commentaire typique à J+4, 5 mots maximum, banal (ex : « Bien, rien à signaler. »).'),
-  story_lemo: z.string().describe('Paragraphe 1, 60 mots maximum, tutoiement, raconté comme une histoire : son moment tel que LEMO l’a capté, dans l’ordre (ce qu’il a ressenti au début, le point de bascule, la fin), et l’angle mort que LEMO a fait émerger. Commence par « Voilà ton moment, vu par LEMO. »'),
-  story_survey: z.string().describe('Paragraphe 2, 50 mots maximum, tutoiement : le même moment vu par une enquête de satisfaction reçue 4 jours plus tard, qui demande un effort ; la note et le commentaire banals qu’il aurait sans doute laissés ; ce qui aurait disparu (citer 2 éléments concrets de son récit). Commence par « Une enquête de satisfaction, quatre jours plus tard, »'),
+  survey_lost: z.string().describe('Ce qui disparaît dans l’enquête, 14 mots maximum, avec 2 éléments concrets du récit. Commence par « Disparus : »'),
   founder_message: z.string().describe('Message de Florio, fondateur de LEMO, 45 mots maximum, tutoiement, chaleureux et sobre. Commence par « Salut <prénom>, c’est Florio, fondateur de LEMO. », fait un clin d’œil concret à son moment, finit par « Si cela éveille ton intérêt, serais-tu dispo pour en discuter ? »'),
 });
 
-export async function experienceReport({ experience, followup, answer, firstName }) {
+export async function experienceReport({ experience, followup, answer, firstName, thin = false }) {
   if (llmMode() === 'simulated') {
     return {
-      story_lemo: 'Voilà ton moment, vu par LEMO. Un début tendu, puis un déclic qui a tout débloqué, et un vrai soulagement à la fin. L’angle mort : ce qui a fait basculer ton ressenti.',
-      story_survey: 'Une enquête de satisfaction, quatre jours plus tard, t’aurait demandé de remplir un questionnaire. Tu aurais sans doute mis 7/10, « Bien, rien à signaler ». La tension du début et le déclic auraient disparu.',
-      founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. Merci pour ton moment, ton déclic m’a parlé. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
+      example: thin ? 'Un rendez-vous qui commence par vingt minutes d’attente à l’accueil, puis un échange si attentionné qu’on en oublie le retard.' : null,
       emotions: [{ emotion: 'agacement', moment: 'au début' }, { emotion: 'soulagement', moment: 'à la fin' }],
       key_moment: 'Le moment où la situation s’est débloquée',
       blind_spot: 'Ce qui a fait basculer le ressenti, invisible dans une note',
       details: ['attente au départ', 'échange humain décisif'],
       quote: null,
+      lemo_lines: [
+        { label: 'Ressenti', text: 'de la tension au début, un vrai soulagement à la fin' },
+        { label: 'Bascule', text: 'le moment où la situation s’est débloquée' },
+        { label: 'Angle mort', text: 'ce qui a fait basculer ton ressenti, invisible dans une note' },
+      ],
       survey_score: 7,
       survey_comment: 'Bien, rien à signaler.',
+      survey_lost: 'Disparus : la tension du début, le déclic.',
+      founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. Merci pour ton moment, ton déclic m’a parlé. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
     };
   }
   return structured(
     ExperienceReport,
     `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. Analyse le récit d'une personne (événement marquant + réponse à une relance).
+${thin ? `Le récit est trop maigre pour une analyse honnête. Imagine un exemple d'expérience bref (25 mots maximum), universel, valable pour tous les secteurs, si possible dans l'esprit du peu qu'elle a dit, et mets-le dans « example ». Puis analyse CET exemple (pas son récit), en t'adressant à elle comme si elle l'avait vécu (« tu »). quote = null.` : 'example = null.'}
 Extrais ce que LEMO capte pendant l'expérience : émotions et moments, point de bascule, angle mort, signaux concrets, une citation exacte.
-Puis indique ce qu'une enquête de satisfaction envoyée 4 jours après obtient TYPIQUEMENT pour ce genre de moment (note et commentaire banal) : le souvenir lisse le vécu.
-Enfin, rédige les deux paragraphes du message envoyé à la personne (story_lemo, story_survey) : une petite histoire simple et vivante, pas une liste, sans titre ni gras ni emoji. Et le message du fondateur.
-Tout ce qui concerne LEMO vient UNIQUEMENT du récit. Phrases très courtes, en français simple.
+Puis ce qu'une enquête de satisfaction envoyée 4 jours après obtient TYPIQUEMENT pour ce genre de moment (note et commentaire banal) : le souvenir lisse le vécu.
+Les lignes « Vu par LEMO » et « Disparus » sont lues sur WhatsApp : très courtes, concrètes, professionnelles, sans emoji, sans gras.
+${thin ? '' : "Tout ce qui concerne LEMO vient UNIQUEMENT du récit."} Français simple.
 ${GROUNDING}`,
     `<prenom>${firstName || ''}</prenom>\n<recit>${experience}</recit>\n<relance>${followup}</relance>\n<reponse>${answer}</reponse>`,
     'medium',
   );
 }
-

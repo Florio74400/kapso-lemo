@@ -9,7 +9,6 @@ process.env.KAPSO_WEBHOOK_SECRET = 'test-secret-0123456789abcdef0123456789';
 process.env.APP_SECRET = 'test-app-secret-0123456789abcdef0123456789';
 process.env.DEMO_MODE = 'true';
 process.env.ONBOARDING_PAUSE_MS = '0';
-process.env.FOUNDER_PHONE = '33699990000';
 delete process.env.KAPSO_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.DATABASE_URL;
@@ -364,20 +363,20 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Quelle heure ?'), '👍');
 });
 
-test('invitation : page épurée, parcours, récit LEMO face à l’enquête J+4, lien personnel et alerte au fondateur', async () => {
+test('invitation : page minimale, relance, synthèse en deux parties, 5 invitations à transférer', async () => {
   const page = await fetch(`${base}/i`).then((r) => r.text());
-  assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
-  assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
-  assert.match(page, />Bienvenue\.<\/h1>/);
-  assert.match(page, /<p class="eyebrow">Invitation personnelle<\/p>/);
-  assert.match(page, /placeholder="Votre prénom"/);
-  assert.match(page, /Early adopter/);
-  assert.match(page, /La conversation continue sur WhatsApp/);
-  assert.match(page, /<script id="cfg" type="application\/json">\{"wa":"https:\/\/wa\.me\//);
+  assert.match(page, /og:title" content="Florio t&#39;invite sur LEMO"/);
+  assert.match(page, /og:description" content="Une invitation privée d’un membre LEMO\./);
+  assert.match(page, /og:image" content="[^"]+\/public\/lemo-thumb\.png\?v=\w+"/);
+  assert.match(page, /og:image:width" content="200"/);
+  assert.match(page, />Bienvenue, Florio<br>t'invite sur LEMO\.<\/h1>/);
+  assert.match(page, />Commencer</);
+  assert.match(page, /placeholder="Ton prénom"/);
+  assert.doesNotMatch(page, /Confidentialité|lemohq|Bonjour|votre/i);
   const js = await fetch(`${base}/public/invite.js`).then((r) => r.text());
   assert.match(js, /Hey LEMO, c'est /, 'message prérempli reconnu par LEMO');
-  const img = await fetch(`${base}/public/lemo-invite.png`);
-  assert.equal(img.headers.get('content-type'), 'image/png');
+  const thumb = await fetch(`${base}/public/lemo-thumb.png`);
+  assert.equal(thumb.headers.get('content-type'), 'image/png');
   await fetch(`${base}/i/evt?k=continue`, { method: 'POST' });
 
   const P = '33688881111';
@@ -386,57 +385,62 @@ test('invitation : page épurée, parcours, récit LEMO face à l’enquête J+4
   let outs = await outsOf(P);
   assert.equal(outs.length, 4, 'quatre messages d’accueil');
   assert.match(outs[0], /^Hello Florio\. Je suis LEMO/);
-  assert.match(outs[1], /3 invitations, débloquées après ta première expérience/);
+  assert.match(outs[1], /5 invitations, débloquées après ta première expérience/);
   assert.match(outs[2], /Le plus simple pour comprendre/);
   assert.match(outs[3], /événement marquant de ta journée/);
 
-  // Événement marquant -> relance sur un angle mort
-  await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');
+  // Événement marquant -> relance
+  await say(P, "Ce midi, déjeuner avec un client important dans une brasserie bondée : l'ambiance était tendue au début, on attendait les plats depuis longtemps, puis tout s'est détendu.");
   assert.match(await lastOut(P), /\?/);
   let m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
   assert.equal(m.first_name, 'Florio');
   assert.equal(m.state, 'awaiting_blindspot');
 
-  // Relance -> un seul message raconté (LEMO puis enquête J+4), sans image ni nouvelle question
+  // Relance -> synthèse « Vu par LEMO » / « Enquête de satisfaction · J+4 », puis les invitations
   await say(P, "Quand il a reconnu que notre proposition l'avait surpris, tout s'est détendu.");
   m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
   assert.equal(m.state, 'experienced');
+  assert.equal(m.invites_total, 5);
   assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
   outs = await outsOf(P);
-  assert.equal(outs.length, 6, 'un seul message après la relance');
-  const story = outs[5];
-  assert.match(story, /^Voilà ton moment, vu par LEMO\./);
-  assert.match(story, /Une enquête de satisfaction, quatre jours plus tard/);
-  assert.match(story, /×\d plus riche/);
-  assert.ok(!outs.some((b) => /^\[image\]|continuons le dev|où brancherais-tu/.test(b)));
-  const card = await fetch(`${base}/m/${m.card_token}.png`);
-  assert.equal(card.headers.get('content-type'), 'image/png');
-  assert.equal((await fetch(`${base}/m/inconnu-123456789.png`)).status, 404);
+  assert.equal(outs.length, 7, 'synthèse puis invitations');
+  const synth = outs[5];
+  assert.match(synth, /^\*Vu par LEMO\*\n\*Ressenti\* — /);
+  assert.match(synth, /\n\n\*Enquête de satisfaction · J\+4\*\n\*7\/10\* — « Bien, rien à signaler\. »\nDisparus : /);
+  assert.doesNotMatch(synth, /plus riche/);
+  const invite = outs[6];
+  assert.match(invite, /^Merci Florio\. Tes 5 invitations sont débloquées\./);
+  const share = decodeURIComponent(invite.match(/\[Envoyer l'invitation\] https:\/\/wa\.me\/\?text=(.+)$/)[1]);
+  assert.match(share, new RegExp(`^Je t'invite sur LEMO.*/i/${m.invite_code}$`));
+  assert.ok(!(await outsOf('33699990000')).length, 'plus d’alerte « nouvel early adopter »');
 
-  // Alerte au fondateur avec message prêt
-  const alert = await lastOut('33699990000');
-  assert.match(alert, /Nouvel early adopter/);
-  assert.match(alert, /\+33688881111/);
-  assert.match(alert, /déjeuner avec un client/);
-  assert.match(alert, /https:\/\/wa\.me\/33688881111\?text=Salut/);
+  // Réponse trop courte : LEMO le dit, analyse un exemple universel
+  const T = '33655554444';
+  await say(T, "Hey LEMO, c'est Léa !");
+  await say(T, 'Un café.');
+  await say(T, 'Bien.');
+  const t = await outsOf(T);
+  assert.match(t[t.length - 3], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
+  assert.match(t[t.length - 2], /^\*Vu par LEMO\*/);
 
-  // Lien personnel : « Invitation personnelle de Florio », puis l'invité est rattaché à Florio
+  // Lien personnel : « Florio t'invite sur LEMO », puis l'invité est rattaché à Florio
   const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
-  assert.match(mine, /<p class="eyebrow">Invitation personnelle de Florio<\/p>/);
-  assert.match(mine, new RegExp(`"code":"${m.invite_code}"`));
   assert.match(mine, /og:title" content="Florio t&#39;invite sur LEMO"/);
+  assert.match(mine, new RegExp(`"code":"${m.invite_code}"`));
   const G = '33677770000';
   await say(G, `Hey LEMO, c'est Marc ! (invitation ${m.invite_code})`);
   const guest = await one('select * from members where phone_hash=$1', [phoneHash(G)]);
   assert.equal(guest.invited_by, m.id);
   assert.equal(guest.first_name, 'Marc');
+  const marcPage = await fetch(`${base}/i/${(await one('select invite_code from members where id=$1', [m.id])).invite_code}`).then((r) => r.text());
+  assert.match(marcPage, /Bienvenue, Florio/);
 
   // CRM : entonnoir et fiche avec bouton « Écrire »
   const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
   const crm = await fetch(`${base}/early-adopters`, { headers: { cookie } }).then((r) => r.text());
   assert.match(crm, /Page ouverte/);
-  assert.match(crm, /Florio/);
-  assert.match(crm, /Invitations : 1\/3/);
+  assert.match(crm, /Invitations : 1\/5/);
+  assert.match(crm, /Vu par LEMO/);
   assert.match(crm, /wa\.me\/33688881111\?text=/);
 });
 

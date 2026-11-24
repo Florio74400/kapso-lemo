@@ -176,6 +176,18 @@ $('phone').onchange=refresh;refresh();setInterval(refresh,3000);
 </script>`;
 }
 
+// Synthèse en texte brut (sans les * du gras WhatsApp) pour le CRM.
+const synthesisText = (r) => [
+  r.example ? `Exemple : « ${r.example} »` : null,
+  'Vu par LEMO',
+  ...(r.lemo_lines || []).map((l) => `${l.label} — ${l.text}`),
+  r.quote ? `« ${r.quote} »` : null,
+  '',
+  'Enquête de satisfaction · J+4',
+  `${r.survey_score}/10 — « ${r.survey_comment} »`,
+  r.survey_lost,
+].filter((x) => x !== null).join('\n');
+
 // Outil d'acquisition : entonnoir et fiches des early adopters, avec le message prêt pour les recontacter.
 const STEP_LABEL = { awaiting_experience: 'Accueilli', awaiting_blindspot: 'Moment raconté', awaiting_projection: 'Analyse reçue', experienced: 'Analyse reçue' };
 export function earlyAdoptersPage({ funnel, members }) {
@@ -201,7 +213,7 @@ export function earlyAdoptersPage({ funnel, members }) {
 <details><summary class="mute">Détail</summary>
 ${m.experience ? `<p class="mute">Son moment</p><blockquote>${esc(m.experience)}</blockquote>` : ''}
 ${m.blindspot ? `<p class="mute">${esc(m.followup || 'Relance')}</p><blockquote>${esc(m.blindspot)}</blockquote>` : ''}
-${r.story_lemo ? `<p class="mute">Message reçu</p><blockquote>${esc([r.story_lemo, r.story_survey].join('\n\n'))}</blockquote>` : ''}
+${r.lemo_lines ? `<p class="mute">Synthèse reçue${r.thin ? ' (sur un exemple : réponse trop courte)' : ''}</p><blockquote>${esc(synthesisText(r))}</blockquote>` : ''}
 ${m.card_token ? `<p class="mute">Fiche visuelle</p><img src="/m/${esc(m.card_token)}.png" alt="" style="width:100%;max-width:420px;border:1px solid var(--line);border-radius:8px">` : ''}
 ${r.founder_message ? `<p class="mute">Message prêt</p><blockquote>${esc(r.founder_message)}</blockquote>` : ''}
 </details></td>

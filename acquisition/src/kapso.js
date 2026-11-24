@@ -73,6 +73,21 @@ export async function sendTemplate(to, name, params, language = 'fr') {
   });
 }
 
+// Message avec un bouton qui ouvre un lien (texte du bouton <= 20 caractères, pied de message <= 60).
+export async function sendCtaUrl(to, body, displayText, url, footer) {
+  if (!kapsoLive()) return { simulated: true };
+  return post({
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'cta_url',
+      body: { text: body },
+      ...(footer ? { footer: { text: footer.slice(0, 60) } } : {}),
+      action: { name: 'cta_url', parameters: { display_text: displayText.slice(0, 20), url } },
+    },
+  });
+}
+
 // Image par lien public (PNG/JPEG), avec légende.
 export async function sendImage(to, link, caption) {
   if (!kapsoLive()) return { simulated: true };
