@@ -109,6 +109,13 @@ async function route(msg) {
   const hash = phoneHash(msg.phone);
   const text = (msg.body || '').trim();
 
+  // 0. Outil d'acquisition, étape 1 : réponse à l'invitation « Hey LEMO »
+  if (/^\s*hey\s+lemo\b/i.test(text)) {
+    if (!(await recordInbound(msg, { role: 'unknown' }))) return 'ignored:duplicate';
+    await reply(msg.phone, 'Très bien continuons le dev maintenant !');
+    return 'invite_hey';
+  }
+
   // 1. Désabonnement
   if (msg.kind === 'text' && STOP_RE.test(text)) return optOut(msg, hash);
 

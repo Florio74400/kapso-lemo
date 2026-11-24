@@ -82,6 +82,15 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ ok: true, db: dbKind(), ai: llmMode(), whatsapp: kapsoLive() ? 'kapso' : 'simulated' }));
 
+  // ---------------- Lien d'invitation ----------------
+  // Page d'aperçu (logo + titre) lue par WhatsApp quand le lien est partagé, puis redirection
+  // immédiate vers la conversation WhatsApp avec « Hey LEMO ! » prérempli. Rien à installer.
+  app.use('/public', express.static(new URL('../public', import.meta.url).pathname, { maxAge: '7d' }));
+  app.get(['/i', '/i/:code'], (_req, res) => {
+    const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
+    res.send(V.invitePage({ wa, base: config.publicUrl }));
+  });
+
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     const r = await receiveWebhook(req.body, req.headers);
     res.sendStatus(r.status);

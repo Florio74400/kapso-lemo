@@ -359,3 +359,14 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Le téléphérique est fermé à cause du vent ?'), '🙏');
   assert.equal(reactionFor('Bonjour'), '👍');
 });
+
+test('invitation : page d’aperçu avec logo, redirection WhatsApp, réponse à « Hey LEMO »', async () => {
+  const page = await fetch(`${base}/i`).then((r) => r.text());
+  assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
+  assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
+  assert.match(page, /wa\.me\/\d*\?text=Hey%20LEMO%20!/);
+  const img = await fetch(`${base}/public/lemo-invite.png`);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  await say('33688881111', 'Hey LEMO !');
+  assert.equal(await lastOut('33688881111'), 'Très bien continuons le dev maintenant !');
+});
