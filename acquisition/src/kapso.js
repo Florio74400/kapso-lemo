@@ -124,6 +124,7 @@ export function extractMessages(payload) {
       waMessageId: m.id,
       direction: k.direction || (m.from ? 'inbound' : 'outbound'),
       phone: (m.from || item.conversation?.phone_number || '').replace(/[^0-9]/g, ''),
+      profileName: item.conversation?.contact_name || null,
       phoneNumberId: item.phone_number_id || item.conversation?.phone_number_id || null,
       kind,
       body,

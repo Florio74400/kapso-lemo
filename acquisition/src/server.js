@@ -89,7 +89,7 @@ export function createApp() {
   app.use('/public', express.static(new URL('../public', import.meta.url).pathname, { maxAge: '7d' }));
   app.get(['/i', '/i/:code'], (req, res) => {
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
-    res.send(invitePage({ wa, base: config.publicUrl, variant: req.query.v }));
+    res.send(invitePage({ wa, waNumber: config.whatsappDisplayNumber, base: config.publicUrl, variant: req.query.v }));
   });
 
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {

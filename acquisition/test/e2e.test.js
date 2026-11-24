@@ -8,6 +8,7 @@ process.env.LOCAL_DB_PATH = 'memory://';
 process.env.KAPSO_WEBHOOK_SECRET = 'test-secret-0123456789abcdef0123456789';
 process.env.APP_SECRET = 'test-app-secret-0123456789abcdef0123456789';
 process.env.DEMO_MODE = 'true';
+process.env.ONBOARDING_PAUSE_MS = '0';
 delete process.env.KAPSO_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.DATABASE_URL;
@@ -362,13 +363,24 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Quelle heure ?'), '👍');
 });
 
-test('invitation : page d’aperçu avec logo, redirection WhatsApp, réponse à « Hey LEMO »', async () => {
+test('invitation : page avec prénom, accueil early adopter sur WhatsApp, première expérience', async () => {
   const page = await fetch(`${base}/i`).then((r) => r.text());
   assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
   assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
   assert.match(page, /wa\.me\/\d*\?text=Hey%20LEMO%20!/);
   const img = await fetch(`${base}/public/lemo-invite.png`);
   assert.equal(img.headers.get('content-type'), 'image/png');
-  await say('33688881111', 'Hey LEMO !');
-  assert.equal(await lastOut('33688881111'), 'Très bien continuons le dev maintenant !');
+  assert.match(page, /Ton prénom/);
+  const P = '33688881111';
+  await say(P, "Hey LEMO, c'est florio !");
+  const outs = await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(P)]);
+  assert.equal(outs.length, 4, 'quatre messages d’accueil');
+  assert.match(outs[0].body, /^Hi Florio\. Je suis LEMO/);
+  assert.match(outs[1].body, /3 invitations/);
+  assert.match(outs[3].body, /Raconte-moi une expérience récente/);
+  await say(P, 'Ce midi, déjeuner avec un client, ambiance tendue au début puis très bonne fin.');
+  assert.equal(await lastOut(P), 'Très bien continuons le dev maintenant !');
+  const m = await one('select * from members where phone_hash=$1', [phoneHash(P)]);
+  assert.equal(m.first_name, 'Florio');
+  assert.match(m.experience, /déjeuner avec un client/);
 });

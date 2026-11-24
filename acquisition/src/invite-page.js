@@ -6,7 +6,7 @@
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export function invitePage({ wa, base, variant = 1, delayMs = 3000 }) {
+export function invitePage({ wa, waNumber = '', base, variant = 1, delayMs = 3000 }) {
   const v = [1, 2, 3].includes(Number(variant)) ? Number(variant) : 1;
   const title = 'Vous êtes invité sur LEMO';
   const desc = "Invitation privée d'un membre LEMO.";
@@ -36,17 +36,27 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
 .counter{margin-top:14px;font:500 10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.12em;color:#888}
 .veil{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .4s ease;z-index:5}
 .veil.on{opacity:1}
+.ask{margin-top:22px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;opacity:0;transform:translateY(6px);transition:opacity .6s ease,transform .6s ease;pointer-events:none}
+.ask.on{opacity:1;transform:none;pointer-events:auto}
+.ask input{font:500 15px "Montserrat",Arial,sans-serif;width:200px;padding:12px 18px;border:1px solid #DADBE6;border-radius:999px;background:rgba(255,255,255,.9);color:#1A1A1A;outline:none;text-align:center;-webkit-appearance:none}
+.ask input:focus{border-color:#6B7CFF;box-shadow:0 0 0 4px rgba(107,124,255,.12)}
+.ask button{font:600 15px "Montserrat",Arial,sans-serif;padding:12px 22px;border:0;border-radius:999px;color:#fff;background:linear-gradient(90deg,#4553C7,#E8856B);cursor:pointer}
+.ask button:disabled{opacity:.5}
+.hello{display:none}.hello.on{display:block;animation:in .7s ease forwards;opacity:0}
+.hello .title{font-size:22px}.hello .sub{margin-top:8px;font-size:14px;color:#555;line-height:1.5;padding:0 24px}
 @keyframes in{to{opacity:1}}
 @media (min-width:900px){.kicker{font-size:11px}.title{font-size:20px}}
 @media (prefers-reduced-motion:reduce){.text{animation:none;opacity:1}}
 </style>
 </head><body>
 <canvas id="cv" aria-hidden="true"></canvas>
-<div class="text" id="text"><div class="kicker">Invitation</div><div class="title">Bienvenue dans LEMO</div>${v === 2 ? '<div class="counter" id="counter">MOMENTS ANALYSÉS 0</div>' : ''}</div>
+<div class="text" id="text"><div id="intro"><div class="kicker">Invitation</div><div class="title">Bienvenue dans LEMO</div>${v === 2 ? '<div class="counter" id="counter">MOMENTS ANALYSÉS 0</div>' : ''}
+<form class="ask" id="ask" autocomplete="on"><input id="name" name="given-name" autocomplete="given-name" placeholder="Ton prénom" maxlength="30" required aria-label="Ton prénom"><button type="submit">Continuer</button></form></div>
+<div class="hello" id="hello"><div class="kicker">Early adopter</div><div class="title">Hello <span id="hn"></span>,</div><div class="sub">tu as reçu une invitation personnelle early adopter.</div></div></div>
 <div class="veil" id="veil"></div>
 <script>
 (function(){
-  var WA=${JSON.stringify(wa)},DELAY=${Number(delayMs)},V=${v};
+  var WA=${JSON.stringify(wa)},NUM=${JSON.stringify(String(waNumber))},DELAY=${Number(delayMs)},V=${v};
   var reduced=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
   var cv=document.getElementById('cv'),ctx=cv.getContext('2d'),txt=document.getElementById('text');
   var W,H,DPR,CX,CY,R,mobile;
@@ -142,9 +152,23 @@ canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  // Ouverture automatique de WhatsApp après 3 s.
-  setTimeout(function(){document.getElementById('veil').classList.add('on')},DELAY-400);
-  setTimeout(function(){location.href=WA},DELAY);
+  // Prénom : le formulaire apparaît après l'introduction animée.
+  var ask=document.getElementById('ask'),inp=document.getElementById('name');
+  setTimeout(function(){ask.classList.add('on')},reduced?0:1800);
+  ask.addEventListener('submit',function(e){
+    e.preventDefault();
+    var n=(inp.value||'').trim().replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' -]/g,'').slice(0,30);
+    if(!n){inp.focus();return}
+    n=n.charAt(0).toUpperCase()+n.slice(1);
+    inp.blur();ask.querySelector('button').disabled=true;
+    document.getElementById('hn').textContent=n;
+    document.getElementById('intro').style.display='none';
+    document.getElementById('hello').classList.add('on');
+    var url=NUM?('https://wa.me/'+NUM+'?text='+encodeURIComponent("Hey LEMO, c'est "+n+' !')):WA;
+    // le temps de lire le message, puis ouverture de WhatsApp
+    setTimeout(function(){document.getElementById('veil').classList.add('on')},2300);
+    setTimeout(function(){location.href=url},2700);
+  });
   addEventListener('pageshow',function(e){if(e.persisted)document.getElementById('veil').classList.remove('on')});
   document.addEventListener('visibilitychange',function(){if(!document.hidden)document.getElementById('veil').classList.remove('on')});
 })();

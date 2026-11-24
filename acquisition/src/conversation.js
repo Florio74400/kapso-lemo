@@ -5,6 +5,7 @@ import { config, llmMode } from './config.js';
 import { query, one } from './db.js';
 import { sendText, sendButtons, sendList, showTyping, sendReaction } from './kapso.js';
 import * as alerts from './alerts.js';
+import * as onboarding from './onboarding.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
 import { answerForManager } from './insights.js';
@@ -110,12 +111,10 @@ async function route(msg) {
   const hash = phoneHash(msg.phone);
   const text = (msg.body || '').trim();
 
-  // 0. Outil d'acquisition, étape 1 : réponse à l'invitation « Hey LEMO »
-  if (/^\s*hey\s+lemo\b/i.test(text)) {
-    if (!(await recordInbound(msg, { role: 'unknown' }))) return 'ignored:duplicate';
-    await reply(msg.phone, 'Très bien continuons le dev maintenant !');
-    return 'invite_hey';
-  }
+  // 0. Outil d'acquisition : accueil des early adopters (« Hey LEMO, c'est Florio ! »), puis leur première expérience
+  if (onboarding.HEY_RE.test(text)) return onboarding.welcome(msg);
+  const newMember = await onboarding.awaitingExperience(msg.phone);
+  if (newMember && !STOP_RE.test(text)) return onboarding.receiveExperience(msg, newMember);
 
   // 1. Désabonnement
   if (msg.kind === 'text' && STOP_RE.test(text)) return optOut(msg, hash);
