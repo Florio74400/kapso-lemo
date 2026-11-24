@@ -368,11 +368,14 @@ test('invitation : page épurée, parcours, récit LEMO face à l’enquête J+4
   const page = await fetch(`${base}/i`).then((r) => r.text());
   assert.match(page, /og:title" content="Vous êtes invité sur LEMO"/);
   assert.match(page, /og:image" content="[^"]+\/public\/lemo-invite\.png"/);
-  assert.match(page, /<h1>Bienvenue<\/h1>/);
-  assert.match(page, /Invitation personnelle</);
-  assert.match(page, /placeholder="Prénom"/);
+  assert.match(page, />Bienvenue\.<\/h1>/);
+  assert.match(page, /<p class="eyebrow">Invitation personnelle<\/p>/);
+  assert.match(page, /placeholder="Votre prénom"/);
   assert.match(page, /Early adopter/);
-  assert.match(page, /Tu vas être transféré sur WhatsApp/);
+  assert.match(page, /La conversation continue sur WhatsApp/);
+  assert.match(page, /<script id="cfg" type="application\/json">\{"wa":"https:\/\/wa\.me\//);
+  const js = await fetch(`${base}/public/invite.js`).then((r) => r.text());
+  assert.match(js, /Hey LEMO, c'est /, 'message prérempli reconnu par LEMO');
   const img = await fetch(`${base}/public/lemo-invite.png`);
   assert.equal(img.headers.get('content-type'), 'image/png');
   await fetch(`${base}/i/evt?k=continue`, { method: 'POST' });
@@ -419,7 +422,8 @@ test('invitation : page épurée, parcours, récit LEMO face à l’enquête J+4
 
   // Lien personnel : « Invitation personnelle de Florio », puis l'invité est rattaché à Florio
   const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
-  assert.match(mine, /Invitation personnelle de Florio/);
+  assert.match(mine, /<p class="eyebrow">Invitation personnelle de Florio<\/p>/);
+  assert.match(mine, new RegExp(`"code":"${m.invite_code}"`));
   assert.match(mine, /og:title" content="Florio t&#39;invite sur LEMO"/);
   const G = '33677770000';
   await say(G, `Hey LEMO, c'est Marc ! (invitation ${m.invite_code})`);
