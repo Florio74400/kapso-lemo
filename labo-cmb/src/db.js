@@ -7,6 +7,7 @@ import { config } from './config.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 let client;
 let kind;
+let schema = null;
 
 export async function initDb() {
   if (client) return;
@@ -15,16 +16,11 @@ export async function initDb() {
     client = new pg.Pool({ connectionString: config.databaseUrl, ssl: { rejectUnauthorized: false }, max: 5 });
     kind = 'postgres';
     // Isolation : le labo CMB a son propre schéma (ses propres tables), séparé de l'outil d'acquisition.
-    const schema = process.env.DB_SCHEMA;
+    schema = process.env.DB_SCHEMA || null;
     if (schema) {
       if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error('DB_SCHEMA invalide');
-      await client.query(`create schema if not exists ${schema}`);
-      client.on('connect', (c) => c.query(`set search_path to ${schema}, public`));
-      // les connexions déjà ouvertes (celle du create schema) sont fermées pour repartir proprement
-      await client.end();
-      client = new pg.Pool({ connectionString: config.databaseUrl, ssl: { rejectUnauthorized: false }, max: 5 });
-      client.on('connect', (c) => c.query(`set search_path to ${schema}, public`));
       kind = `postgres (schéma ${schema})`;
+      await client.query(`create schema if not exists ${schema}`);
     }
   } else {
     const { PGlite } = await import('@electric-sql/pglite');
@@ -36,7 +32,7 @@ export async function initDb() {
   for (const f of fs.readdirSync(migrations).sort()) {
     const sql = fs.readFileSync(path.join(migrations, f), 'utf8');
     if (kind === 'local') await client.exec(sql);
-    else await client.query(sql);
+    else await query(sql);
   }
 }
 
@@ -45,8 +41,18 @@ export function dbKind() {
 }
 
 export async function query(sql, params = []) {
-  const res = await client.query(sql, params);
-  return res.rows;
+  if (!schema || kind === 'local') return (await client.query(sql, params)).rows;
+  // Chaque connexion est placée une fois pour toutes dans le schéma du labo avant sa première requête.
+  const c = await client.connect();
+  try {
+    if (!c.labSchema) {
+      await c.query(`set search_path to ${schema}, public`);
+      c.labSchema = true;
+    }
+    return (await c.query(sql, params)).rows;
+  } finally {
+    c.release();
+  }
 }
 
 export async function one(sql, params = []) {
