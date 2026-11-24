@@ -4,4 +4,4 @@ alter table members add column if not exists blindspot text;         -- réponse
 alter table members add column if not exists report jsonb;           -- restitution générée
 alter table members add column if not exists card_token text unique; -- adresse non devinable du schéma
 alter table members drop constraint if exists members_state_check;
-alter table members add constraint members_state_check check (state in ('awaiting_experience','awaiting_blindspot','experienced'));
+alter table members add constraint members_state_check check (state in ('awaiting_experience','awaiting_blindspot','awaiting_projection','experienced'));
