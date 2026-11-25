@@ -600,7 +600,9 @@ test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le 
   const r = await one('select * from campaign_responses where phone_hash=$1', [phoneHash(P1)]);
   assert.equal(r.state, 'done');
   assert.equal(r.phone, null, 'numéro du participant effacé');
-  assert.match(await lastOut(L), /^\*Retour 1 · .+\*\n\*Ressenti :\* /);
+  const back = await lastOut(L);
+  assert.match(back, /^\*Retour 1 · .+\*\n\*Ressenti :\* /);
+  assert.doesNotMatch(back.split('\n').slice(1).join('\n'), /\b(tu|te|ton|ta|tes|t')\b/i, 'le dirigeant lit le retour de quelqu’un d’autre : jamais « tu »');
 
   // Le CRM : test A/B et campagne dans la fiche
   const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];

@@ -412,3 +412,35 @@ ${GROUNDING}`,
     `<sujet_du_dirigeant>${topic}</sujet_du_dirigeant>`,
   );
 }
+
+// Retour d'un participant, lu par le DIRIGEANT qui a lancé la campagne : jamais « tu », formulation neutre,
+// centré sur le sujet du dirigeant (pas de transposition vers un autre commerce).
+export const CampaignResponse = z.object({
+  lemo_lines: z.array(z.object({
+    label: z.string().describe('Ressenti, Bascule ou Angle mort.'),
+    text: z.string().describe('Une phrase de 18 mots maximum, au neutre : formulation nominale de préférence, jamais « tu », « vous », « il » ou « elle », aucun accord masculin ou féminin.'),
+  })).describe('Exactement 3 lignes, dans cet ordre : Ressenti (le début et la fin), Bascule, Angle mort (ce que le dirigeant n’aurait pas su avec une enquête classique, sur SON sujet).'),
+  quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT de la réponse, 15 mots maximum. null si rien de parlant.'),
+});
+
+export async function campaignResponseAnalysis({ topic, question, answer, followup, followupAnswer }) {
+  if (llmMode() === 'simulated') {
+    return {
+      lemo_lines: [
+        { label: 'Ressenti', text: 'Agacement au début, puis soulagement à la fin.' },
+        { label: 'Bascule', text: 'Le geste de l’équipe qui a tout rattrapé.' },
+        { label: 'Angle mort', text: 'L’attente du début, invisible dans une note, a pesé plus que tout le reste.' },
+      ],
+      quote: null,
+    };
+  }
+  return structured(
+    CampaignResponse,
+    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. Un dirigeant a lancé une mini-campagne pour recueillir à chaud le ressenti de quelques personnes sur un sujet. Une personne vient de répondre (une question, puis une relance).
+Rédige 3 lignes pour LE DIRIGEANT, qui lit le retour de quelqu'un d'autre : jamais « tu » ni « vous », jamais « il » ni « elle », aucun accord masculin ou féminin. Préfère des formulations nominales (ex : « Curiosité au début, conviction à la fin »).
+Reste sur le sujet du dirigeant : l'angle mort dit ce que ce retour lui apprend sur SON sujet, qu'une enquête de satisfaction classique n'aurait pas capté. Ne transpose jamais vers une autre entreprise. Si la réponse sort du sujet, dis-le simplement.
+Phrases courtes, concrètes, professionnelles. Sans emoji, sans tiret long (—) ni moyen (–).
+${GROUNDING}`,
+    `<sujet_du_dirigeant>${topic}</sujet_du_dirigeant>\n<question>${question}</question>\n<reponse>${answer}</reponse>\n<relance>${followup}</relance>\n<reponse_relance>${followupAnswer}</reponse_relance>`,
+  );
+}

@@ -7,7 +7,8 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound, phoneHash } from './conversation.js';
-import { blindSpotQuestion, experienceReport, campaignDraft } from './llm.js';
+import { blindSpotQuestion, campaignDraft, campaignResponseAnalysis } from './llm.js';
+import { verifiedQuote } from './onboarding.js';
 
 const PAUSE_MS = Number(process.env.ONBOARDING_PAUSE_MS ?? 900);
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -129,7 +130,7 @@ export async function campaignByCode(code) {
 
 export async function participantInProgress(phone) {
   return one(
-    `select r.*, c.code, c.question, c.register, c.title, c.member_id, m.first_name as leader
+    `select r.*, c.code, c.question, c.topic, c.register, c.title, c.member_id, m.first_name as leader
      from campaign_responses r join campaigns c on c.id=r.campaign_id join members m on m.id=c.member_id
      where r.phone_hash=$1 and r.state in ('awaiting_answer','awaiting_followup') order by r.created_at desc limit 1`,
     [phoneHash(phone)],
@@ -182,7 +183,8 @@ export async function participantAnswer(msg, r) {
     await reply(msg.phone, question);
     return 'participant_answer';
   }
-  const report = await experienceReport({ experience: r.answer, followup: r.followup, answer: text, thin: false });
+  const report = await campaignResponseAnalysis({ topic: r.topic, question: r.question, answer: r.answer, followup: r.followup, followupAnswer: text });
+  report.quote = verifiedQuote(report.quote, r.answer, text);
   await query(`update campaign_responses set followup_answer=$2, analysis=$3, state='done', completed_at=now(), phone=null where id=$1`, [r.id, text, JSON.stringify(report)]);
   await logEvent(r.member_id, 'B', 'participant_done');
   await reply(
@@ -206,7 +208,7 @@ async function notifyLeader(r, report) {
   if (!recent) return;
   const { n } = await one(`select count(*)::int as n from campaign_responses where campaign_id=$1 and state='done'`, [r.campaign_id]);
   const lines = (report.lemo_lines || []).filter((l) => !/^d[ée]tail/i.test(l.label)).slice(0, 3);
-  await reply(leader.phone, [`*Retour ${n} · ${r.title}*`, ...lines.map((l) => `*${l.label} :* ${l.text}`)].join('\n'));
+  await reply(leader.phone, [`*Retour ${n} · ${r.title}*`, ...lines.map((l) => `*${l.label} :* ${l.text}`), report.quote ? `_« ${report.quote} »_` : null].filter(Boolean).join('\n'));
 }
 
 export async function optOutParticipant(hash) {
