@@ -60,6 +60,7 @@ function periodText({ first, last }) {
   if (y1 === y2) return `du ${day(first, { day: 'numeric', month: 'long' })} au ${longDate(last)}`;
   return `du ${longDate(first)} au ${longDate(last)}`;
 }
+export const WEEKDAY_RE = /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)s?\b/i;
 const pct = (a, n) => (n ? Math.round((a / n) * 100) : 0);
 
 // ---------------- Données ----------------
@@ -121,7 +122,7 @@ function simulatedSynthesis(items, scope, canQuote) {
   };
   const neg = items.filter((f) => f.sentiment === 'negative');
   const pos = items.filter((f) => f.sentiment === 'positive');
-  const first = (f) => ({ id: f.n, text: (f.verbatim.match(/[^.!?]+[.!?]/g) || [f.verbatim]).map((x) => x.trim()).sort((a, b) => b.length - a.length)[0] });
+  const first = (f) => ({ id: f.n, text: (f.verbatim.match(/[^.!?]+[.!?]/g) || [f.verbatim]).map((x) => x.trim()).filter((x) => !WEEKDAY_RE.test(x)).sort((a, b) => b.length - a.length)[0] || '' });
   return {
     headline: `${items.length} retours clients analysés ${scope}.`,
     summary: `${pct(pos.length, items.length)} % des retours sont positifs et ${pct(neg.length, items.length)} % négatifs. Synthèse simulée (pas de clé Claude configurée) : regroupement par sujet uniquement.`,
@@ -147,7 +148,7 @@ function cleanQuotes(quotes, items) {
   const out = [];
   for (const q of quotes || []) {
     const f = byN.get(q.id);
-    if (!f || !q.text || seen.has(q.id) || !flat(f.verbatim).includes(flat(q.text))) continue;
+    if (!f || !q.text || seen.has(q.id) || WEEKDAY_RE.test(q.text) || !flat(f.verbatim).includes(flat(q.text))) continue;
     seen.add(q.id);
     out.push({ text: q.text.trim().replace(/^["«\s]+|["»\s]+$/g, ''), where: `${f.place}, ${shortDate(f.created_at)} ${hourLabel(f.created_at)}`, tone: f.sentiment });
   }

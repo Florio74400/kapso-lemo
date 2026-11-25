@@ -100,7 +100,7 @@ export async function answerForManager({ company, question, period }) {
   const corpus = flat(data.text);
   const quotes =
     data.feedbackCount >= company.privacy_threshold
-      ? (res.quotes || []).filter((q) => q.text && corpus.includes(flat(q.text))).slice(0, 2)
+      ? (res.quotes || []).filter((q) => q.text && !/\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)s?\b/i.test(q.text) && corpus.includes(flat(q.text))).slice(0, 2)
       : [];
   const body = capWords(res.answer, ANSWER_MAX_WORDS + 15);
   const refs = quotes.map((q) => `« ${q.text.trim()} »\n_${q.where}_`).join('\n\n');

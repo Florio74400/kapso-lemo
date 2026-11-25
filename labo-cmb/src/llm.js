@@ -260,7 +260,7 @@ export const ANSWER_MAX_WORDS = 80;
 export const DataAnswer = z.object({
   answer: z.string().describe(`Réponse WhatsApp de ${ANSWER_MAX_WORDS} mots maximum, sans les citations.`),
   quotes: z
-    .array(z.object({ text: z.string().describe('Extrait COPIÉ MOT POUR MOT d’un verbatim fourni, 20 mots maximum.'), where: z.string().describe('Lieu et moment, ex : « Flégère, 23/11 9h30 ».') }))
+    .array(z.object({ text: z.string().describe('Extrait COPIÉ MOT POUR MOT d’un verbatim fourni, 20 mots maximum, sans jour de la semaine.'), where: z.string().describe('Lieu et moment, ex : « Flégère, 23/11 9h30 ».') }))
     .describe('0 à 2 verbatims de référence, les plus parlants.'),
   items_used: z.number().int().describe('Nombre de retours ou questions sur lesquels repose la réponse.'),
 });
@@ -277,6 +277,8 @@ Fond :
 - Réponds UNIQUEMENT à partir de ces données. Si rien ne correspond (lieu, période, sujet), dis-le en une phrase, sans extrapoler.
 - La réponse directe d'abord, puis l'essentiel : ce qui est urgent, le lieu, le moment, le nombre de retours concernés ("3 retours sur 12").
 - Constate, n'oriente pas : aucune recommandation, aucun conseil, aucune proposition, aucune question en retour.
+- Dates au format 23/11, jamais de jour de la semaine (ni « samedi », ni « dimanche »...), même si un client en cite un.
+- Si on te demande un PDF ou un fichier, ne dis pas que tu ne peux pas : réponds simplement sur le fond.
 
 Forme (registre premium) :
 - ${ANSWER_MAX_WORDS} mots maximum dans "answer". Phrases courtes et denses. Chaque mot compte.
@@ -330,10 +332,11 @@ Chaque ligne est un retour numéroté (#n) déjà analysé.
 Fond :
 - Uniquement à partir des retours fournis. Aucun chiffre dans tes textes : les comptes sont calculés à part.
 - Constate, n'oriente pas : aucune recommandation, aucune action proposée.
+- Dates au format 23/11, jamais de jour de la semaine, même si un client en cite un.
 - Les thèmes regroupent des retours qui parlent de la même chose concrète (lieu, équipement, moment). Mets dans "ids" tous les retours concernés, sans en inventer.
 
 Forme : français sobre de note de direction, vouvoiement implicite, pas d'emoji, pas de point d'exclamation.
-${canQuote ? 'Extraits : copiés mot pour mot dans le verbatim du retour cité, sans aucun détail permettant d’identifier un client.' : `Moins de ${threshold} retours : "quotes" doit rester vide (confidentialité).`}
+${canQuote ? 'Extraits : copiés mot pour mot dans le verbatim du retour cité, sans aucun détail permettant d’identifier un client, et sans jour de la semaine (« samedi », « dimanche »...).' : `Moins de ${threshold} retours : "quotes" doit rester vide (confidentialité).`}
 ${GROUNDING}`,
     `<retours>\n${data}\n</retours>`,
     'medium',
