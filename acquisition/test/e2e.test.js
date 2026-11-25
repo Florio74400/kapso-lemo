@@ -611,3 +611,10 @@ test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le 
   assert.match(crm, /« Envoyer l’invitation »|Envoyer l’invitation/);
   assert.match(crm, new RegExp(`Campagne · ${c.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
+
+test('lien du fondateur : toujours « Florio t’invite », même testé sous un autre prénom', async () => {
+  const F = OWNER; // numéro du dirigeant de l'entreprise de test
+  await query(`insert into members (phone_hash, phone, first_name, invite_code, state) values ($1,$2,'Mehdi','FNDR01','experienced') on conflict (phone_hash) do update set first_name='Mehdi', invite_code='FNDR01'`, [phoneHash(F), F]);
+  const page = await fetch(`${base}/i/FNDR01`).then((r) => r.text());
+  assert.match(page, /og:title" content="Florio t&#39;invite sur LEMO"/);
+});

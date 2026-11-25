@@ -138,8 +138,12 @@ export function createApp() {
     let code = null;
     let inviter = null;
     if (req.params.code) {
-      const m = await one(`select first_name, invite_code from members where invite_code=$1`, [req.params.code.toUpperCase()]);
-      if (m) ({ invite_code: code, first_name: inviter } = m);
+      const m = await one(
+        `select first_name, invite_code, exists(select 1 from companies c where m.phone = any(c.owner_phones)) as founder from members m where invite_code=$1`,
+        [req.params.code.toUpperCase()],
+      );
+      // Le lien du fondateur affiche toujours son prénom, même s'il a testé le parcours sous un autre nom.
+      if (m) ({ invite_code: code, first_name: inviter } = { ...m, first_name: m.founder ? config.founderName : m.first_name });
     }
     // les robots d'aperçu (WhatsApp, réseaux) ne comptent pas comme des visites
     if (!isPreviewBot(req)) {
