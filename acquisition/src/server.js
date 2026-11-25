@@ -320,7 +320,15 @@ async function bootstrapAdmin() {
   const password = (process.env.ADMIN_PASSWORD || '').trim();
   if (!email || !password) return;
   if (password.length < 10) return console.error('[admin] ADMIN_PASSWORD trop court (10 caractères minimum), compte non créé');
-  if (await one('select 1 from companies where lower(admin_email)=lower($1)', [email])) return;
+  // Compte existant : ADMIN_PASSWORD fait foi. Changer la variable sur Railway réinitialise le mot de passe.
+  const existing = await one('select id, admin_password_hash from companies where lower(admin_email)=lower($1)', [email]);
+  if (existing) {
+    if (!checkPassword(password, existing.admin_password_hash)) {
+      await query('update companies set admin_password_hash=$2 where id=$1', [existing.id, hashPassword(password)]);
+      console.log('[admin] mot de passe mis à jour depuis ADMIN_PASSWORD');
+    }
+    return;
+  }
   const phones = (process.env.OWNER_PHONE || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter(Boolean);
   await query(`insert into companies (name, admin_email, admin_password_hash, owner_phones) values ($1,$2,$3,$4)`, [
     (process.env.COMPANY_NAME || 'Mon entreprise').trim(),
