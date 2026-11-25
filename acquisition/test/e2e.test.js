@@ -403,12 +403,17 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.equal(m.invites_total, 5);
   assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
   outs = await outsOf(P);
-  assert.equal(outs.length, 7, 'synthèse puis invitations');
-  const synth = outs[5];
-  assert.match(synth, /^\*Vu par LEMO\*\n\*Ressenti\* — /);
-  assert.match(synth, /\n\n\*Enquête de satisfaction · J\+4\*\n\*7\/10\* — « Bien, rien à signaler\. »\nDisparus : /);
-  assert.doesNotMatch(synth, /plus riche/);
-  const invite = outs[6];
+  assert.equal(outs.length, 8, 'schéma, synthèse puis invitations');
+  assert.match(outs[3], /^Peux-tu me décrire un événement marquant de ta journée \?/);
+  assert.match(outs[5], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
+  const card = await fetch(`${base}/m/${m.card_token}.png`);
+  assert.equal(card.headers.get('content-type'), 'image/png');
+  const synth = outs[6];
+  assert.match(synth, /^\*Vu par LEMO, à chaud\*\n\*Ressenti :\* /);
+  assert.match(synth, /\n\n\*Enquête de satisfaction, à J\+4\*\nIl aurait fallu retrouver le mail.*Réponse type : \*7\/10\*, « Bien, rien à signaler\. »/);
+  assert.match(synth, /\n\n\*La différence\*\nTu as raconté ce moment à chaud.*WhatsApp/);
+  assert.doesNotMatch(synth, /plus riche|[—–]/);
+  const invite = outs[7];
   assert.match(invite, /^Merci Florio\. Tes 5 invitations sont débloquées\./);
   const share = decodeURIComponent(invite.match(/\[Envoyer l'invitation\] https:\/\/wa\.me\/\?text=(.+)$/)[1]);
   assert.match(share, new RegExp(`^Je t'invite sur LEMO.*/i/${m.invite_code}$`));
@@ -420,8 +425,8 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   await say(T, 'Un café.');
   await say(T, 'Bien.');
   const t = await outsOf(T);
-  assert.match(t[t.length - 3], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
-  assert.match(t[t.length - 2], /^\*Vu par LEMO\*/);
+  assert.match(t[t.length - 4], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
+  assert.match(t[t.length - 2], /^\*Vu par LEMO, à chaud\*/);
 
   // Lien personnel : « Florio t'invite sur LEMO », puis l'invité est rattaché à Florio
   const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
@@ -448,4 +453,9 @@ test('citation : affichée seulement si elle existe mot pour mot', async () => {
   const { verifiedQuote } = await import('../src/onboarding.js');
   assert.equal(verifiedQuote('tout s’est détendu', "Puis tout s'est détendu."), 'tout s’est détendu');
   assert.equal(verifiedQuote('une phrase inventée', 'Rien à voir.'), null);
+});
+
+test('rédaction : aucun tiret long ni moyen dans les textes générés', async () => {
+  const { noDashes } = await import('../src/llm.js');
+  assert.deepEqual(noDashes({ a: 'Ressenti — attente', b: ['x – y'], c: 3 }), { a: 'Ressenti, attente', b: ['x, y'], c: 3 });
 });

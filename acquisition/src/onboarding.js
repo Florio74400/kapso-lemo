@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound, phoneHash } from './conversation.js';
+import { sendImage } from './kapso.js';
 import { blindSpotQuestion, experienceReport } from './llm.js';
 
 export const INVITES_PER_MEMBER = 5;
@@ -48,7 +49,7 @@ export async function welcome(msg) {
     `Hello${name ? ` ${name}` : ''}. Je suis LEMO, le moteur d'analyse émotionnelle en temps réel : avant, pendant et après chaque expérience.`,
     `LEMO est en accès sur invitation uniquement. Tu disposes de ${INVITES_PER_MEMBER} invitations, débloquées après ta première expérience.`,
     "Le plus simple pour comprendre, c'est d'essayer.",
-    'Pour commencer : peux-tu me décrire un événement marquant de ta journée ? Par écrit ou en vocal.',
+    'Peux-tu me décrire un événement marquant de ta journée ? Par écrit ou en vocal.',
   ];
   for (const [i, line] of lines.entries()) {
     if (i) await pause(PAUSE_MS);
@@ -89,7 +90,7 @@ export function verifiedQuote(quote, ...sources) {
 export const THIN_WORDS = 25;
 const words = (t) => String(t || '').split(/\s+/).filter(Boolean).length;
 
-// Étape 2 : la réponse à la relance -> synthèse « Vu par LEMO » / « Enquête de satisfaction · J+4 »,
+// Étape 2 : la réponse à la relance -> schéma (courbe de l'oubli) + synthèse « Vu par LEMO » / « Enquête à J+4 » / « La différence »,
 // puis les invitations (bouton qui ouvre WhatsApp avec le message prêt à transférer).
 export async function receiveBlindspot(msg, member) {
   if (!(await recordInbound(msg, { role: 'respondent' }))) return 'ignored:duplicate';
@@ -102,7 +103,7 @@ export async function receiveBlindspot(msg, member) {
   const report = await experienceReport({ experience: member.experience, followup: member.followup, answer, firstName: member.first_name, thin });
   report.thin = thin && Boolean(report.example);
   report.quote = report.thin ? null : verifiedQuote(report.quote, member.experience, answer);
-  const token = crypto.randomBytes(12).toString('base64url'); // fiche visuelle, consultable dans le CRM
+  const token = crypto.randomBytes(12).toString('base64url'); // adresse non devinable du schéma (courbe de l'oubli)
   let code = member.invite_code;
   for (let i = 0; !code && i < 5; i++) {
     const candidate = newInviteCode();
@@ -114,6 +115,8 @@ export async function receiveBlindspot(msg, member) {
     await reply(msg.phone, `J'ai très peu d'informations sur ton moment. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« ${report.example} »_`);
     await pause(PAUSE_MS);
   }
+  await sendCard(msg.phone, `${config.publicUrl}/m/${token}.png`, 'Ton moment, à chaud et à J+4.');
+  await pause(PAUSE_MS);
   await reply(msg.phone, synthesisMessage(report));
   await pause(PAUSE_MS * 2);
   const { body, cta } = inviteMessage({ firstName: member.first_name, total: member.invites_total, code });
@@ -121,12 +124,30 @@ export async function receiveBlindspot(msg, member) {
   return 'onboarding_report';
 }
 
-// Synthèse lue sur WhatsApp : deux parties courtes, titres et libellés en gras.
+// Synthèse lue sur WhatsApp : ce que LEMO a capté à chaud, ce qu'une enquête à J+4 en aurait gardé,
+// et la différence (s'exprimer à chaud, avec l'outil du quotidien, pour pouvoir agir le jour même).
 export function synthesisMessage(r) {
+  const comment = String(r.survey_comment || '').replace(/^[«"\s]+|[»"\s]+$/g, '');
   return [
-    ['*Vu par LEMO*', ...(r.lemo_lines || []).map((l) => `*${l.label}* — ${l.text}`), r.quote ? `_« ${r.quote} »_` : null].filter(Boolean).join('\n'),
-    ['*Enquête de satisfaction · J+4*', `*${r.survey_score}/10* — « ${String(r.survey_comment).replace(/^[«"\s]+|[»"\s]+$/g, '')} »`, r.survey_lost].filter(Boolean).join('\n'),
+    ['*Vu par LEMO, à chaud*', ...(r.lemo_lines || []).map((l) => `*${l.label} :* ${l.text}`), r.quote ? `_« ${r.quote} »_` : null].filter(Boolean).join('\n'),
+    [
+      '*Enquête de satisfaction, à J+4*',
+      `Il aurait fallu retrouver le mail, ouvrir le lien, te souvenir et remplir le questionnaire. Réponse type : *${r.survey_score}/10*, « ${comment} ». ${r.survey_lost || ''}`.trim(),
+    ].join('\n'),
+    [
+      '*La différence*',
+      "Tu as raconté ce moment à chaud, en deux messages, sur WhatsApp, l'outil que tu utilises déjà tous les jours. Une équipe peut donc ajuster ou réagir le jour même. Une enquête à J+4 arrive après l'oubli : une note lissée, trop tard pour décider.",
+    ].join('\n'),
   ].join('\n\n');
+}
+
+async function sendCard(phone, link, caption) {
+  await query(`insert into messages (direction, role, phone_hash, kind, body) values ('out','lemo',$1,'other',$2)`, [phoneHash(phone), `[image] ${link}`]);
+  try {
+    await sendImage(phone, link, caption);
+  } catch (err) {
+    console.error('[kapso] envoi image échoué :', err.message);
+  }
 }
 
 // Dernier message : les invitations. Le bouton ouvre WhatsApp, on choisit un contact, le message est prêt.
