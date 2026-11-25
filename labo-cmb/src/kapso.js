@@ -63,6 +63,12 @@ export async function sendList(to, body, button, rows) {
   });
 }
 
+// Document (PDF) par lien public HTTPS : WhatsApp le télécharge et l'affiche comme fichier, prêt à transférer.
+export async function sendDocument(to, link, filename, caption) {
+  if (!kapsoLive()) return { simulated: true };
+  return post({ to, type: 'document', document: { link, filename, ...(caption ? { caption } : {}) } });
+}
+
 // Message modèle approuvé par Meta (seul envoi possible hors fenêtre de 24 h ; payant ; indisponible en sandbox).
 export async function sendTemplate(to, name, params, language = 'fr') {
   if (!kapsoLive()) return { simulated: true };

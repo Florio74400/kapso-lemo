@@ -3,11 +3,12 @@
 import crypto from 'node:crypto';
 import { config, llmMode } from './config.js';
 import { query, one } from './db.js';
-import { sendText, sendButtons, sendList, showTyping, sendReaction } from './kapso.js';
+import { sendText, sendButtons, sendList, showTyping, sendReaction, sendDocument } from './kapso.js';
 import * as alerts from './alerts.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
 import { answerForManager } from './insights.js';
+import { buildDocument, storeDocument, detectDomain, DOCUMENT_RE } from './pdf-report.js';
 
 export const CODE_RE = /LEMO-[A-HJ-NP-Z2-9]{4}/i;
 const STOP_RE = /^\s*(stop|arret|arrêt|desabonner|désabonner|desinscription|désinscription|unsubscribe)\s*[.!]?\s*$/i;
@@ -146,7 +147,7 @@ async function route(msg) {
   if (company) {
     if (!sub) return ownerMessage(msg, company);
     const intent = await classifyOwnerMessage((msg.kind === 'audio' ? msg.transcript : msg.body) || '').catch(() => null);
-    if (intent && ['create_collection', 'report', 'list', 'ask_data'].includes(intent.intent)) return ownerMessage(msg, company, intent);
+    if (intent && (['create_collection', 'report', 'list', 'ask_data'].includes(intent.intent) || intent.document)) return ownerMessage(msg, company, intent);
   }
   if (sub) return alerts.answerQuestion(msg, hash, sub);
 
@@ -300,6 +301,40 @@ async function optOut(msg, hash) {
   return 'opted_out';
 }
 
+// ================== Rapport PDF ==================
+async function sendPdf(msg, company, text, period) {
+  const domain = detectDomain(text);
+  const p = period || '7d';
+  const opts = { companyId: company.id };
+  await reply(msg.phone, `Je prépare le rapport PDF${domain ? ' sur ce domaine' : ''}, il arrive dans une minute.`, opts);
+  let doc;
+  try {
+    doc = await buildDocument({ company, period: p, domain });
+  } catch (err) {
+    console.error('[pdf] génération :', err.message);
+    await reply(msg.phone, 'Je n’ai pas réussi à générer le PDF. Réessayez dans un instant.', opts);
+    return 'pdf_error';
+  }
+  if (doc.empty) {
+    await reply(msg.phone, `Aucun retour client ${doc.scope} : pas de rapport à produire. Essayez une période plus large, par exemple « ce mois-ci ».`, opts);
+    return 'pdf_empty';
+  }
+  const { url } = await storeDocument(company.id, doc.filename, doc.buffer);
+  const caption = `${doc.data.place} · ${doc.data.n} retour(s) · ${doc.data.periodText}`;
+  await query(`insert into messages (company_id, direction, role, phone_hash, kind, body) values ($1,'out','lemo',$2,'document',$3)`, [
+    company.id,
+    phoneHash(msg.phone),
+    `${caption}\n${url}`,
+  ]);
+  try {
+    await sendDocument(msg.phone, url, doc.filename, caption);
+  } catch (err) {
+    console.error('[kapso] envoi du PDF :', err.message);
+    await reply(msg.phone, `Le rapport est prêt : ${url}`, opts);
+  }
+  return 'pdf_sent';
+}
+
 // ================== Parcours dirigeant ==================
 export function newCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -335,6 +370,9 @@ async function ownerMessage(msg, company, knownIntent = null) {
     await reply(msg.phone, 'Petit souci technique, réessayez dans un instant.', { companyId: company.id });
     return 'owner_error';
   }
+
+  // Rapport PDF à partager (« un PDF des retours de la semaine sur les Grands Montets pour le COMEX »)
+  if (intent.intent !== 'create_collection' && (intent.document || DOCUMENT_RE.test(text))) return sendPdf(msg, company, text, intent.period);
 
   // Question libre sur les données ("Y a-t-il eu des problèmes aujourd'hui à la Flégère ?")
   // Toute demande d'un cadre reçoit une réponse tirée des retours : seules les salutations courtes
@@ -398,7 +436,7 @@ async function ownerMessage(msg, company, knownIntent = null) {
     msg.phone,
     "Je suis *Jarvis*, l'assistant expérience client de la Compagnie du Mont-Blanc, propulsé par LEMO. Je réponds à partir de ce que vos clients nous disent.\n\n" +
       (company.is_owner ? "Je peux :\n- créer une collecte : « Je veux savoir ce que mes clients ont pensé de leur séjour »\n" : 'Je peux :\n') +
-      "- répondre à vos questions sur les retours : « Y a-t-il eu des problèmes aujourd'hui à la Flégère ? »\n- faire le bilan : « Fais-moi le bilan de ma collecte »\n- lister vos collectes : « Mes collectes »",
+      "- répondre à vos questions sur les retours : « Y a-t-il eu des problèmes aujourd'hui à la Flégère ? »\n- faire le bilan : « Fais-moi le bilan de ma collecte »\n- préparer un PDF à transférer : « Un PDF des retours de la semaine sur les Grands Montets »\n- lister vos collectes : « Mes collectes »",
     { companyId: company.id },
   );
   return 'owner_help';

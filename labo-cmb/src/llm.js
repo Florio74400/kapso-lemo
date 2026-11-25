@@ -13,6 +13,7 @@ export const OwnerIntent = z.object({
   collection_title: z.string().nullable().describe("Sujet court, ex: 'votre séjour'. Seulement pour create_collection."),
   collection_question: z.string().nullable().describe('Question ouverte, chaleureuse, une seule phrase. Seulement pour create_collection.'),
   collection_code: z.string().nullable().describe('Code LEMO-XXXX cité par le dirigeant, sinon null.'),
+  document: z.boolean().describe('true s’il demande un PDF, un rapport, un document ou un fichier à partager ou transférer (ex : pour le COMEX).'),
 });
 
 export const Followup = z.object({
@@ -301,4 +302,40 @@ function simDataAnswer(data, periodLabel) {
     quotes: [],
     items_used: lines.length,
   };
+}
+
+// ================= Rapport PDF à partager (COMEX) =================
+// L'IA regroupe les retours par numéro (#n) : les comptes sont recalculés par le code à partir de ces numéros,
+// et chaque extrait est vérifié mot pour mot avant d'être imprimé.
+const Theme = z.object({
+  label: z.string().describe('Thème court et concret, 6 mots maximum, ex : « Attente à l’ouverture de Plan Joran ».'),
+  ids: z.array(z.number().int()).describe('Numéros (#n) de TOUS les retours qui en parlent.'),
+});
+export const DocumentSynthesis = z.object({
+  headline: z.string().describe('Le constat principal en une phrase, 20 mots maximum.'),
+  summary: z.string().describe('3 phrases courtes, 60 mots maximum : ce qui domine, ce qui a changé sur la période, le point le plus sensible.'),
+  irritants: z.array(Theme).describe('2 à 4 irritants, du plus cité au moins cité.'),
+  positives: z.array(Theme).describe('1 à 4 points forts, du plus cité au moins cité.'),
+  quotes: z
+    .array(z.object({ id: z.number().int(), text: z.string().describe('Extrait COPIÉ MOT POUR MOT du verbatim #id, 25 mots maximum.') }))
+    .describe('3 à 4 extraits parlants, négatifs et positifs, représentatifs des thèmes.'),
+});
+
+export async function synthesizeDocument({ company, scope, data, canQuote, threshold }) {
+  return structured(
+    DocumentSynthesis,
+    `Tu prépares un rapport d'une page pour le comité de direction de ${company}, à partir des retours clients ${scope}.
+Chaque ligne est un retour numéroté (#n) déjà analysé.
+
+Fond :
+- Uniquement à partir des retours fournis. Aucun chiffre dans tes textes : les comptes sont calculés à part.
+- Constate, n'oriente pas : aucune recommandation, aucune action proposée.
+- Les thèmes regroupent des retours qui parlent de la même chose concrète (lieu, équipement, moment). Mets dans "ids" tous les retours concernés, sans en inventer.
+
+Forme : français sobre de note de direction, vouvoiement implicite, pas d'emoji, pas de point d'exclamation.
+${canQuote ? 'Extraits : copiés mot pour mot dans le verbatim du retour cité, sans aucun détail permettant d’identifier un client.' : `Moins de ${threshold} retours : "quotes" doit rester vide (confidentialité).`}
+${GROUNDING}`,
+    `<retours>\n${data}\n</retours>`,
+    'medium',
+  );
 }

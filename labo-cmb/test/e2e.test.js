@@ -354,3 +354,24 @@ test('démo CMB : 200 retours fictifs recalés sur aujourd’hui, Jarvis répond
   await say(CADRE, 'Bonjour');
   assert.match(await lastOut(CADRE), /Jarvis/);
 });
+
+test('rapport PDF : demandé sur WhatsApp, filtré sur un domaine, téléchargeable par lien', async () => {
+  const other = await one(`select * from companies where admin_email='b@test.fr'`);
+  const CADRE = '33613131313';
+  await say(CADRE, 'Tu peux me faire un PDF des retours de la semaine sur les grands montants pour le COMEX ?');
+  const msg = await one(`select body from messages where phone_hash=$1 and kind='document' order by seq desc limit 1`, [phoneHash(CADRE)]);
+  assert.ok(msg, 'document envoyé');
+  assert.match(msg.body, /^Grands Montets · \d+ retour\(s\) · du /);
+  const token = msg.body.match(/\/d\/([a-f0-9]{48})$/)[1];
+  const doc = await one('select company_id, filename from documents where token=$1', [token]);
+  assert.equal(doc.company_id, other.id);
+  assert.match(doc.filename, /^LEMO_Grands-Montets_\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.pdf$/);
+  const r = await fetch(`${base}/d/${token}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('content-type'), 'application/pdf');
+  assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
+  assert.equal((await fetch(`${base}/d/${'0'.repeat(48)}`)).status, 404);
+  // « par rapport à » n'est pas une demande de rapport
+  await say(CADRE, 'Comment évoluent les retours par rapport à la semaine dernière ?');
+  assert.match(await lastOut(CADRE), /\d+ retour\(s\), \d+ question\(s\) · /);
+});

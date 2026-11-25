@@ -7,6 +7,7 @@ import { initDb, query, one, dbKind } from './db.js';
 import { verifySignature, sign, extractMessages } from './kapso.js';
 import { handleInbound, createCollection, waLink, phoneHash, drainQueues } from './conversation.js';
 import { buildReport } from './report.js';
+import { getDocument } from './pdf-report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
@@ -85,6 +86,18 @@ export function createApp() {
   app.post('/webhooks/kapso', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
     const r = await receiveWebhook(req.body, req.headers);
     res.sendStatus(r.status);
+  });
+
+  app.get('/d/:token', async (req, res) => {
+    const d = await getDocument(req.params.token);
+    if (!d) return res.status(404).send('Document introuvable ou expiré.');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${d.filename.replace(/[^A-Za-z0-9._-]/g, '_')}"`,
+      'Cache-Control': 'private, no-store',
+      'X-Robots-Tag': 'noindex',
+    });
+    res.send(Buffer.from(d.body));
   });
 
   app.use(express.urlencoded({ extended: false }));

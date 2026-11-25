@@ -151,6 +151,15 @@ Un lien d'inscription (QR code, puce NFC, lien wa.me) inscrit une personne à un
 
 Modèles fournis : `cmb_ski` (remontées, démo), `atmb_trafic` (tunnel et autoroutes, démo, 3 questions de départ), `manual`.
 
+## Rapport PDF pour le COMEX
+
+Un cadre écrit à Jarvis : « Un PDF des retours de la semaine sur les Grands Montets pour le COMEX ». Jarvis répond qu'il prépare le rapport, puis envoie le PDF dans WhatsApp (prêt à transférer).
+
+- Gabarit fixe, une page A4 paysage : bandeau Mont-Blanc Natural Resort (`assets/cmb-banner.jpg`), chiffres clés, l'essentiel, ce qui irrite / ce qui plaît, jour par jour, verbatims, points d'attention.
+- Les chiffres sont calculés par le code. Claude regroupe les retours par numéro et choisit des extraits, vérifiés mot pour mot. Aucune recommandation.
+- Domaine reconnu dans la demande (y compris « grands montants » dicté au vocal). Période : comme pour les questions (semaine par défaut).
+- Le PDF est stocké en base (table `documents`) et servi par un lien non devinable, purgé après 30 jours.
+
 ## Structure
 
 ```
@@ -158,6 +167,7 @@ src/server.js        webhook, CRM, simulateur
 src/conversation.js  parcours client et dirigeant, consentement, STOP
 src/llm.js           Claude (sorties JSON validées) + simulateur d'analyse
 src/report.js        statistiques, synthèse, seuil de confidentialité
+src/pdf-report.js    rapport PDF d'une page (charte CMB fixe) demandé sur WhatsApp, lien /d/<jeton> valable 30 jours
 src/alerts.js        parcours d'inscription : choix, envois programmés, questions, retours
 src/optins.js        modèles de liens d'inscription (questions, horaires, sources)
 src/cmb-data.js      données de démonstration remontées

@@ -45,6 +45,7 @@ export async function runMaintenance() {
   );
   await query(`delete from messages where company_id is null and created_at < now() - interval '30 days'`);
   await query(`delete from webhook_events where created_at < now() - interval '7 days'`);
+  await query(`delete from documents where created_at < now() - interval '30 days'`);
 }
 
 export function startJobs() {
