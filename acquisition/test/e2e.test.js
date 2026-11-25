@@ -482,6 +482,9 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.match(loginPage, /<title>Connexion · LEMO<\/title>/);
   assert.match(loginPage, /<svg[^>]*viewBox="0 0 864 278"/);
   assert.match(loginPage, /placeholder="E-mail"/);
+  assert.match(loginPage, /<link rel="apple-touch-icon" sizes="180x180" href="\/public\/apple-touch-icon\.png">/);
+  assert.equal((await fetch(`${base}/public/apple-touch-icon.png`)).headers.get('content-type'), 'image/png');
+  assert.match(await fetch(`${base}/public/manifest.webmanifest`).then((r) => r.text()), /"start_url": "\/early-adopters"/);
 
   // Après « Envoyer depuis mon WhatsApp » : passe dans « Contactés »
   const florio = await one('select id from members where phone_hash=$1', [phoneHash(P)]);

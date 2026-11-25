@@ -3,6 +3,13 @@
 // avec un gros bouton « Écrire sur WhatsApp » (message prêt, modifiable avant l'envoi).
 // Les pages Collectes et Réglages gardent leur ancienne mise en page : on ne fait que les lier.
 
+// Icône de l'écran d'accueil (iPhone, Android) et du navigateur : le logo LEMO.
+const APP_ICONS = `<link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32.png">
+<link rel="manifest" href="/public/manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="LEMO"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">`;
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const ICON = {
@@ -213,7 +220,7 @@ export function shell({ company, active, todo = 0, title, body, script = '' }) {
   <div class="me"><div class="avatar">${esc(initials(company.name))}</div><div class="who">${esc(company.name)}<span>${esc(company.admin_email)}</span></div>
     <a href="/logout" title="Sortir" aria-label="Sortir">${icon('logout', 17)}</a></div>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#FFFFFF"><title>${esc(title)} · LEMO</title><style>${CSS}</style></head><body>
+<meta name="theme-color" content="#FFFFFF">${APP_ICONS}<title>${esc(title)} · LEMO</title><style>${CSS}</style></head><body>
 <div class="shell">
   <aside class="side" id="side">${nav}</aside>
   <div class="scrim" id="scrim"></div>
@@ -313,7 +320,7 @@ export function settingsView({ company, settings, saved, todo }) {
 // Page de connexion aux couleurs de LEMO.
 export function loginView({ error = '', logo }) {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#FFFFFF"><title>Connexion · LEMO</title>
+<meta name="theme-color" content="#FFFFFF">${APP_ICONS}<title>Connexion · LEMO</title>
 <style>
 @font-face{font-family:'Montserrat';font-style:normal;font-weight:100 900;font-display:swap;src:url(/public/montserrat.woff2) format('woff2')}
 *{box-sizing:border-box;margin:0;padding:0}
