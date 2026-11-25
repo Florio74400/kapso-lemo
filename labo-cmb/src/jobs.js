@@ -3,10 +3,13 @@ import { query } from './db.js';
 import { finalize, analyzeSession } from './conversation.js';
 import { processEvent } from './server.js';
 import { runAlerts } from './alerts.js';
+import { reanchorDemoVerbatims } from '../scripts/demo-verbatims/index.js';
 
 export async function runMaintenance() {
   // 0. Alertes remontées : info du matin, question de fin de journée, fin d'abonnement.
   await runAlerts();
+  // 0 bis. Retours fictifs de démonstration : recalés sur la date du jour (sans effet s'ils ne sont pas chargés).
+  await reanchorDemoVerbatims();
   // 1. Relance restée sans réponse 30 min : on analyse ce qu'on a (sans envoyer de message).
   for (const s of await query(`select id from sessions where state='awaiting_followup' and updated_at < now() - interval '30 minutes'`)) {
     await finalize(s.id);

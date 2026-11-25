@@ -323,3 +323,34 @@ test('réactions : emoji adapté au contenu, jamais de sourire sur un problème'
   assert.equal(reactionFor('Le téléphérique est fermé à cause du vent ?'), '🙏');
   assert.equal(reactionFor('Bonjour'), '👍');
 });
+
+test('démo CMB : 200 retours fictifs recalés sur aujourd’hui, Jarvis répond à toute demande', async () => {
+  const { seedDemoVerbatims, reanchorDemoVerbatims, DEMO_CODE } = await import('../scripts/demo-verbatims/index.js');
+  await seedDemoVerbatims('b@test.fr');
+  const col = await one('select * from collections where code=$1', [DEMO_CODE]);
+  assert.equal((await one('select count(*)::int as n from feedbacks where collection_id=$1', [col.id])).n, 200);
+
+  // Une semaine après le dernier jour de démo : tout est décalé de 7 jours, heure conservée.
+  const lastDay = async () =>
+    (await one(`select max(to_char(created_at at time zone 'Europe/Paris','YYYY-MM-DD')) as d from feedbacks where collection_id=$1`, [col.id])).d;
+  const before = await lastDay();
+  const target = new Date(Date.parse(before) + 7 * 86400000).toISOString().slice(0, 10);
+  assert.equal(await reanchorDemoVerbatims(target), 7);
+  assert.equal(await lastDay(), target);
+  assert.equal(await reanchorDemoVerbatims(target), 0, 'sans effet une fois recalé');
+  const sub = await one(`select days, choices from subscriptions where collection_id=$1 and $2 = any(days) limit 1`, [col.id, target]);
+  assert.ok(sub, 'les jours des abonnements suivent');
+  assert.deepEqual((typeof sub.choices === 'string' ? JSON.parse(sub.choices) : sub.choices).days, sub.days);
+
+  // Recalage sur la date réelle : les questions « cette semaine » trouvent les retours.
+  await reanchorDemoVerbatims();
+  const other = await one(`select * from companies where admin_email='b@test.fr'`);
+  const CADRE = '33613131313';
+  await query('update companies set reader_phones=$2 where id=$1', [other.id, [CADRE]]);
+  await say(CADRE, 'Les irritants principaux cette semaine');
+  const out = await lastOut(CADRE);
+  assert.match(out, /\d+ retour\(s\), \d+ question\(s\) · /, 'une demande sans point d’interrogation reçoit une réponse');
+  assert.doesNotMatch(out, /^0 retour/);
+  await say(CADRE, 'Bonjour');
+  assert.match(await lastOut(CADRE), /Jarvis/);
+});

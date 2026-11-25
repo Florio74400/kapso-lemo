@@ -71,8 +71,8 @@ export async function classifyOwnerMessage(text) {
     `Tu es LEMO, assistant qui aide un dirigeant à collecter les retours de ses clients sur WhatsApp.
 Classe sa demande :
 - create_collection : il veut recueillir l'avis/ressenti de ses clients sur quelque chose. Déduis un sujet court et formule UNE question ouverte, simple, qui invite à raconter son ressenti (pas de question fermée, pas de note sur 10).
-- report : il veut le bilan / la synthèse globale d'une collecte.
-- ask_data : il pose une question sur les RETOURS et le vécu des clients : problèmes signalés, irritants, incidents, pannes vécues, émotions, tendances, ce que les clients ont dit ou demandé, sur une période (aujourd'hui, hier, une semaine, un mois...). Indique la période.
+- report : il veut le bilan d'UNE collecte précise, qu'il désigne (« ma collecte », « la collecte X », un code LEMO-XXXX).
+- ask_data : il pose une question sur les RETOURS et le vécu des clients : problèmes signalés, irritants, incidents, pannes vécues, émotions, tendances, ce que les clients ont dit ou demandé, sur une période (aujourd'hui, hier, une semaine, un mois...). Un bilan ou un point sur une période ou un lieu (« le point de la semaine », « bilan du jour à la Flégère », « fais-moi le bilan ») est aussi ask_data. Indique la période ; « depuis le début », « la saison » = all.
 - other : notamment une question PRATIQUE sur l'état du service (ex : « Lognan est ouvert demain ? », « il y a des navettes ? », horaires, météo), qui ne porte pas sur ce que disent les clients.
 - list : il veut voir ses collectes.
 - help : il demande comment ça marche.

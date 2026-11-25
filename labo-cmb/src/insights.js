@@ -46,7 +46,7 @@ export async function gatherData(companyId, period) {
      left join lateral (
        select x.choices, x.domain from subscriptions x where x.phone_hash = s.phone_hash and x.collection_id = f.collection_id order by x.created_at desc limit 1
      ) sub on true
-     where c.company_id = $1 and f.created_at >= $2 and f.created_at < $3
+     where c.company_id = $1 and f.created_at >= $2 and f.created_at < $3 and f.created_at <= now()
      order by f.created_at desc limit ${MAX_ITEMS}`,
     [companyId, b.from, b.to],
   );

@@ -92,3 +92,38 @@ export async function seedDemoVerbatims(adminEmail) {
   }
   console.log(`[démo] ${rows.length} retours fictifs chargés dans ${DEMO_CODE}`);
 }
+
+// Recale les retours fictifs pour que leur dernier jour soit aujourd'hui (heure de Paris).
+// Sans ce recalage, « aujourd'hui » ou « cette semaine » ne trouvent plus rien quelques jours après le chargement,
+// et la purge RGPD finirait par les supprimer. Décalage en jours entiers : l'heure de chaque retour est conservée.
+// Les retours d'aujourd'hui dont l'heure n'est pas encore passée sont ignorés par Jarvis (voir insights.js).
+export async function reanchorDemoVerbatims(today = parisToday()) {
+  const col = await one('select id from collections where code=$1', [DEMO_CODE]);
+  if (!col) return 0;
+  const last = await one(
+    `select max(to_char(created_at at time zone 'Europe/Paris', 'YYYY-MM-DD')) as d from feedbacks where collection_id=$1`,
+    [col.id],
+  );
+  if (!last?.d) return 0;
+  const delta = Math.round((Date.parse(today) - Date.parse(last.d)) / 86400000);
+  if (delta <= 0) return 0;
+  const shift = (c) => `${c} = ${c} + make_interval(days => $2::int)`;
+  await query(`update feedbacks set ${shift('created_at')} where collection_id=$1`, [col.id, delta]);
+  await query(
+    `update sessions set ${shift('created_at')}, ${shift('updated_at')}, ${shift('last_inbound_at')}, ${shift('completed_at')} where collection_id=$1`,
+    [col.id, delta],
+  );
+  await query(
+    `update subscriptions set ${shift('created_at')}, ${shift('updated_at')},
+       days = array(select to_char(d::date + $2::int, 'YYYY-MM-DD') from unnest(days) d)
+     where collection_id=$1`,
+    [col.id, delta],
+  );
+  await query(`update subscriptions set choices = jsonb_set(choices, '{days}', to_jsonb(days)) where collection_id=$1 and choices ? 'days'`, [col.id]);
+  console.log(`[démo] retours fictifs recalés de ${delta} jour(s) : dernier jour = ${today}`);
+  return delta;
+}
+
+function parisToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+}

@@ -337,7 +337,10 @@ async function ownerMessage(msg, company, knownIntent = null) {
   }
 
   // Question libre sur les données ("Y a-t-il eu des problèmes aujourd'hui à la Flégère ?")
-  if (intent.intent === 'ask_data' || (intent.intent === 'other' && /\?/.test(text))) {
+  // Toute demande d'un cadre reçoit une réponse tirée des retours : seules les salutations courtes
+  // (« Bonjour », « Salut Jarvis ») renvoient la présentation.
+  const substantive = /\?/.test(text) || text.trim().split(/\s+/).length >= 3;
+  if (intent.intent === 'ask_data' || (intent.intent === 'other' && substantive)) {
     let answer;
     try {
       answer = await answerForManager({ company, question: text, period: intent.period });
