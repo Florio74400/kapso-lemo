@@ -6,6 +6,7 @@ import { query, one } from './db.js';
 import { sendText, sendButtons, sendList, sendCtaUrl, showTyping, sendReaction } from './kapso.js';
 import * as alerts from './alerts.js';
 import * as onboarding from './onboarding.js';
+import * as campaigns from './campaigns.js';
 import { classifyOwnerMessage, decideFollowup, analyzeFeedback } from './llm.js';
 import { buildReport } from './report.js';
 import { answerForManager } from './insights.js';
@@ -112,12 +113,24 @@ async function route(msg) {
   const hash = phoneHash(msg.phone);
   const text = (msg.body || '').trim();
 
-  // 0. Outil d'acquisition : accueil des early adopters (« Hey LEMO, c'est Florio ! »), puis leur première expérience
+  // 0. Outil d'acquisition.
+  // Participant d'une campagne créée par un early adopter (« … (campagne ABC123) »), puis ses réponses.
+  const campaignCode = text.match(campaigns.CAMPAIGN_RE)?.[1];
+  if (campaignCode) return campaigns.participantStart(msg, campaignCode);
+  // Accueil des early adopters (« Hey LEMO, c'est Florio ! »), puis leur première expérience
   if (onboarding.HEY_RE.test(text)) return onboarding.welcome(msg);
-  const newMember = await onboarding.inProgress(msg.phone);
-  if (newMember && !STOP_RE.test(text)) {
-    if (newMember.state === 'awaiting_blindspot') return onboarding.receiveBlindspot(msg, newMember);
-    return onboarding.receiveExperience(msg, newMember);
+  if (!STOP_RE.test(text)) {
+    const participant = await campaigns.participantInProgress(msg.phone);
+    if (participant) return campaigns.participantAnswer(msg, participant);
+    const newMember = await onboarding.inProgress(msg.phone);
+    if (newMember) {
+      if (newMember.state === 'awaiting_campaign_topic') return campaigns.receiveTopic(msg, newMember);
+      if (newMember.state === 'awaiting_blindspot') return onboarding.receiveBlindspot(msg, newMember);
+      return onboarding.receiveExperience(msg, newMember);
+    }
+    // Variante B : « Créer ma campagne »
+    const member = await onboarding.memberByPhone(msg.phone);
+    if (member && (await campaigns.wantsCampaign(msg, member))) return campaigns.startCampaign(msg, member);
   }
 
   // 1. Désabonnement
@@ -299,6 +312,10 @@ export async function analyzeSession(s) {
 
 async function optOut(msg, hash) {
   await query('insert into opt_outs (phone_hash) values ($1) on conflict do nothing', [hash]);
+  if (await campaigns.optOutParticipant(hash)) {
+    await reply(msg.phone, "C'est noté : LEMO ne vous écrira plus, et votre réponse a été supprimée.");
+    return 'opted_out';
+  }
   if (await onboarding.optOutMember(hash)) {
     await reply(msg.phone, "C'est noté : tu ne recevras plus de messages de LEMO, et tes réponses ont été supprimées. Écris « Hey LEMO » si tu changes d'avis.");
     return 'opted_out';

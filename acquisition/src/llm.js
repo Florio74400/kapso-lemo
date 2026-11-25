@@ -316,9 +316,9 @@ export const BlindSpotQuestion = z.object({
   question: z.string().describe('La relance : une question, ou deux très courtes liées, 30 mots maximum, tutoiement.'),
 });
 
-export async function blindSpotQuestion({ experience, firstName }) {
+export async function blindSpotQuestion({ experience, firstName, register = 'tu' }) {
   if (llmMode() === 'simulated') {
-    return { question: "À quel instant précis ça a basculé ? Raconte-moi ce qui s'est passé juste avant, même un détail qui te paraît anodin." };
+    return { question: register === 'vous' ? "À quel instant précis votre ressenti a-t-il basculé ? Racontez ce qui s'est passé juste avant, même un détail." : "À quel instant précis ça a basculé ? Raconte-moi ce qui s'est passé juste avant, même un détail qui te paraît anodin." };
   }
   return structured(
     BlindSpotQuestion,
@@ -327,7 +327,7 @@ export async function blindSpotQuestion({ experience, firstName }) {
 - Récit riche : creuse UN point précis de son récit. Par exemple l'instant exact où le ressenti a basculé, un détail concret (un geste, une phrase, une attente, un lieu), ce qu'elle espérait sans le dire, ce que ça a changé pour la suite de sa journée.
 - Récit vague ou très court : ne demande pas « peux-tu développer ». Pose une question précise et concrète sur un aspect typique de ce genre de moment (l'accueil, l'attente, une personne, l'ambiance, ce qui a fait la différence), qui donne envie de raconter.
 À éviter : « Comment t'es-tu senti ? », « Peux-tu en dire plus ? », toute question fermée (oui/non) ou à note.
-Une question, ou deux très courtes liées. 30 mots maximum. Tutoiement, ton chaleureux et sobre, sans emoji, sans tiret long (—) ni moyen (–).
+Une question, ou deux très courtes liées. 30 mots maximum. ${register === 'vous' ? 'Vouvoiement' : 'Tutoiement'}, ton chaleureux et sobre, sans emoji, sans tiret long (—) ni moyen (–).
 ${GROUNDING}`,
     `<recit>${experience}</recit>`,
   );
@@ -387,5 +387,28 @@ ${thin ? '' : "Tout ce qui concerne LEMO vient UNIQUEMENT du récit."} Français
 ${GROUNDING}`,
     `<prenom>${firstName || ''}</prenom>\n<recit>${experience}</recit>\n<relance>${followup}</relance>\n<reponse>${answer}</reponse>`,
     'medium',
+  );
+}
+
+// ================= Variante B : mini-campagne créée par un early adopter =================
+export const CampaignDraft = z.object({
+  title: z.string().describe('Le sujet en 2 à 6 mots, pour le dirigeant. Ex : « Accueil du restaurant ».'),
+  subject: z.string().describe('Le sujet tel qu’il sera écrit dans le message envoyé aux 5 personnes, introduit par un article, 10 mots maximum. Ex : « l’accueil au restaurant ce midi ».'),
+  register: z.enum(['tu', 'vous']).describe('« vous » si les destinataires sont des clients, des inconnus ou une relation formelle ; « tu » pour une équipe, des collègues, des proches.'),
+  question: z.string().describe('LA question posée aux participants : ouverte, sur un moment précis et récent, qui fait raconter à chaud. 25 mots maximum, au registre choisi. Pas de note, pas de oui/non.'),
+});
+
+export async function campaignDraft({ leaderName, topic }) {
+  if (llmMode() === 'simulated') {
+    return { title: 'Ton sujet', subject: 'le moment dont je t’ai parlé', register: 'tu', question: 'Raconte-moi ce moment : qu’est-ce qui t’a marqué, en bien ou en moins bien ?' };
+  }
+  return structured(
+    CampaignDraft,
+    `Tu es LEMO, moteur d'analyse émotionnelle en temps réel par WhatsApp. ${leaderName || 'Un dirigeant'} veut recueillir à chaud le ressenti de 5 personnes de son choix (équipe ou clients) sur un sujet.
+Rédige la question qui leur sera posée : une seule, ouverte, concrète, sur un moment précis et récent, qui donne envie de raconter (pas « êtes-vous satisfait », pas de note).
+Choisis le registre : « vous » pour des clients ou une relation formelle, « tu » pour une équipe ou des proches. En cas de doute, « vous ».
+Sans emoji, sans tiret long (—) ni moyen (–). Français simple.
+${GROUNDING}`,
+    `<sujet_du_dirigeant>${topic}</sujet_du_dirigeant>`,
   );
 }

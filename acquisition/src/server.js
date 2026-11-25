@@ -10,7 +10,14 @@ import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
-import { earlyAdoptersView, settingsView, loginView } from './crm-view.js';
+import { earlyAdoptersView, settingsView, loginView, campaignPage } from './crm-view.js';
+import { logEvent, inviteShareText, campaignByCode, participantHello } from './campaigns.js';
+
+// Les robots d'aperçu (WhatsApp, réseaux) ne comptent ni comme des visites ni comme des clics.
+const isPreviewBot = (req) => {
+  const ua = req.get('user-agent') || '';
+  return !/Mozilla/.test(ua) || /facebookexternalhit|bot|crawler|preview/i.test(ua); // le robot d'aperçu WhatsApp n'a pas « Mozilla »
+};
 import { INVITES_PER_MEMBER } from './onboarding.js';
 import fs from 'node:fs';
 
@@ -97,6 +104,28 @@ export function createApp() {
   // « Vue dirigeant » fictive (plus envoyée dans le parcours ; gardée pour en discuter en interne).
   app.get('/v/dirigeant.png', (_req, res) => res.set('Content-Type', 'image/png').set('Cache-Control', 'public, max-age=86400').send(dashboardPng()));
 
+  // Test A/B : liens suivis. Variante A, « Envoyer l'invitation » ; variante B, « Envoyer la campagne ».
+  app.get('/go/i/:code', async (req, res) => {
+    const m = await one('select id, variant, invite_code from members where invite_code=$1', [String(req.params.code).toUpperCase()]);
+    if (!m) return res.redirect(302, `${config.publicUrl}/i`);
+    if (!isPreviewBot(req)) await logEvent(m.id, m.variant || 'A', 'cta_click');
+    res.redirect(302, `https://wa.me/?text=${encodeURIComponent(inviteShareText(m.invite_code))}`);
+  });
+  app.get('/go/c/:code', async (req, res) => {
+    const c = await campaignByCode(req.params.code);
+    if (!c) return res.status(404).send('Campagne introuvable');
+    if (!isPreviewBot(req)) await logEvent(c.member_id, 'B', 'forward_click');
+    res.redirect(302, `https://wa.me/?text=${encodeURIComponent(c.forward_message)}`);
+  });
+  // Lien reçu par un participant : aperçu WhatsApp (« Florio vous demande votre avis »), puis ouverture de WhatsApp.
+  app.get('/c/:code', async (req, res) => {
+    const c = await campaignByCode(req.params.code);
+    if (!c) return res.status(404).send('Ce lien de campagne n’est plus valable.');
+    if (!isPreviewBot(req)) await logEvent(c.member_id, 'B', 'participant_open');
+    const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent(participantHello(c, c.leader))}`;
+    res.send(campaignPage({ campaign: c, wa, base: config.publicUrl }));
+  });
+
   // Suivi de l'entonnoir : clic sur « Continuer » (le prénom n'est pas enregistré ici).
   app.post('/i/evt', async (req, res) => {
     const code = String(req.query.c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || null;
@@ -113,7 +142,7 @@ export function createApp() {
       if (m) ({ invite_code: code, first_name: inviter } = m);
     }
     // les robots d'aperçu (WhatsApp, réseaux) ne comptent pas comme des visites
-    if (!/whatsapp|facebookexternalhit|bot|crawler|preview/i.test(req.get('user-agent') || '')) {
+    if (!isPreviewBot(req)) {
       await query(`insert into invite_events (kind, code) values ('view',$1)`, [code]).catch(() => {});
     }
     const wa = `https://wa.me/${config.whatsappDisplayNumber}?text=${encodeURIComponent('Hey LEMO !')}`;
@@ -281,11 +310,27 @@ export function createApp() {
       from members m left join members i on i.id=m.invited_by
       where ${MEMBER_FILTERS[filter]} order by m.updated_at desc limit 300`);
     for (const m of members) if (typeof m.report === 'string') m.report = JSON.parse(m.report);
+    // Campagnes (variante B) et leurs réponses, pour les personnes affichées
+    const ids = members.map((m) => m.id);
+    const camps = ids.length ? await query(`select * from campaigns where member_id = any($1::uuid[]) order by created_at desc`, [ids]) : [];
+    const resps = camps.length ? await query(`select campaign_id, state, analysis, completed_at from campaign_responses where campaign_id = any($1::uuid[]) order by created_at`, [camps.map((c) => c.id)]) : [];
+    for (const c of camps) c.responses = resps.filter((r) => r.campaign_id === c.id).map((r) => ({ ...r, analysis: typeof r.analysis === 'string' ? JSON.parse(r.analysis) : r.analysis }));
+    for (const m of members) m.campaigns = camps.filter((c) => c.member_id === m.id);
+    // Test A/B : chaque étape, en personnes distinctes (ou en participants pour la suite de B)
+    const ev = Object.fromEntries((await query(`select variant || ':' || kind as k, count(distinct member_id)::int as people, count(*)::int as n from ab_events group by 1`)).map((r) => [r.k, r]));
+    const people = (k) => ev[k]?.people || 0;
+    const times = (k) => ev[k]?.n || 0;
+    const invitesA = await one(`select count(*)::int as arrived, count(*) filter (where x.report is not null)::int as done
+      from members x join members y on y.id=x.invited_by where y.variant='A'`);
+    const ab = {
+      A: { shown: people('A:shown'), click: people('A:cta_click'), arrived: invitesA.arrived, done: invitesA.done },
+      B: { shown: people('B:shown'), click: people('B:cta_click'), created: people('B:campaign_created'), forwarded: people('B:forward_click'), opened: times('B:participant_open'), started: times('B:participant_start'), done: times('B:participant_done') },
+    };
     // Lien à copier : le lien personnel du fondateur s'il a fait le parcours (ses invités lui sont rattachés), sinon le lien général.
     const owner = (req.company.owner_phones || [])[0];
     const me = owner ? await one('select invite_code from members where phone_hash=$1', [phoneHash(owner)]) : null;
     const inviteUrl = `${config.publicUrl}/i${me?.invite_code ? `/${me.invite_code}` : ''}`;
-    res.send(earlyAdoptersView({ company: req.company, funnel, members, counts, filter, inviteUrl }));
+    res.send(earlyAdoptersView({ company: req.company, funnel, members, counts, filter, inviteUrl, ab }));
   });
   // Ajouter des invitations à une personne (+1, +5). On reste en nombre limité : 100 au plus.
   app.post('/early-adopters/:id/invites', auth, async (req, res) => {

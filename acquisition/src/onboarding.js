@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound, phoneHash } from './conversation.js';
 import { notifyNewFeedback } from './notify.js';
+import { sendEnding } from './campaigns.js';
 import { blindSpotQuestion, experienceReport } from './llm.js';
 
 export const INVITES_PER_MEMBER = 5;
@@ -61,7 +62,11 @@ export async function welcome(msg) {
 
 // Membre au milieu du parcours (événement marquant ou relance) ?
 export async function inProgress(phone) {
-  return one(`select * from members where phone_hash=$1 and opted_out_at is null and state in ('awaiting_experience','awaiting_blindspot')`, [phoneHash(phone)]);
+  return one(`select * from members where phone_hash=$1 and opted_out_at is null and state in ('awaiting_experience','awaiting_blindspot','awaiting_campaign_topic')`, [phoneHash(phone)]);
+}
+
+export async function memberByPhone(phone) {
+  return one(`select * from members where phone_hash=$1 and opted_out_at is null`, [phoneHash(phone)]);
 }
 
 // STOP : plus aucun contact (le bouton « Écrire » du CRM disparaît), réponses et échanges effacés.
@@ -103,7 +108,7 @@ export const THIN_WORDS = 25;
 const words = (t) => String(t || '').split(/\s+/).filter(Boolean).length;
 
 // Étape 2 : la réponse à la relance -> synthèse « Vu par LEMO » / « Enquête à J+4 » / « La différence »,
-// puis les invitations (bouton qui ouvre WhatsApp avec le message prêt à transférer).
+// puis le dernier message du test A/B (src/campaigns.js).
 export async function receiveBlindspot(msg, member) {
   if (!(await recordInbound(msg, { role: 'respondent' }))) return 'ignored:duplicate';
   const answer = spoken(msg);
@@ -128,8 +133,7 @@ export async function receiveBlindspot(msg, member) {
   }
   await reply(msg.phone, synthesisMessage(report));
   await pause(PAUSE_MS * 2);
-  const { body, cta } = inviteMessage({ firstName: member.first_name, total: member.invites_total, code });
-  await reply(msg.phone, body, { cta });
+  await sendEnding(member, msg.phone, code); // test A/B : A = envoyer l'invitation, B = créer sa campagne
   const inviter = member.invited_by ? await one('select first_name from members where id=$1', [member.invited_by]) : null;
   notifyNewFeedback({ firstName: member.first_name, inviter: inviter?.first_name }).catch((e) => console.error('[alerte]', e.message));
   return 'onboarding_report';
@@ -154,12 +158,3 @@ export function synthesisMessage(r) {
   ].filter(Boolean).join('\n\n');
 }
 
-// Dernier message : les invitations. Le bouton ouvre WhatsApp, on choisit un contact, le message est prêt.
-export function inviteMessage({ firstName, total, code }) {
-  const link = `${config.publicUrl}/i/${code}`;
-  const share = `Je t'invite sur LEMO : la data émotionnelle en temps réel, en un message WhatsApp. Accès sur invitation uniquement, essaie : ${link}`;
-  return {
-    body: `Merci${firstName ? ` ${firstName}` : ''}. Tes ${total} invitations sont débloquées.\n\nFais vivre LEMO à ${total} personnes de ton choix : touche le bouton, choisis un contact, le message est prêt.`,
-    cta: { text: "Envoyer l'invitation", url: `https://wa.me/?text=${encodeURIComponent(share)}`, footer: `${total} invitations · lien personnel` },
-  };
-}

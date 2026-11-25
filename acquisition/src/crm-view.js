@@ -108,6 +108,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.01em}
 code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:#F4F4F6;border-radius:6px;padding:2px 6px;word-break:break-all}
 @media (max-width:1100px){.row{grid-template-columns:minmax(160px,1fr) minmax(0,1.6fr) auto}.row .state{display:none}}
 @media (max-width:820px){
+  .stats[style*="repeat(2"]{grid-template-columns:1fr!important}
   .side{position:fixed;z-index:20;left:0;top:0;transform:translateX(-100%);transition:transform .25s;box-shadow:0 0 40px rgba(0,0,0,.12)}
   .side.show{transform:none}
   .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:10}.scrim.show{display:block}
@@ -170,6 +171,32 @@ function invitesHtml(m) {
     ${m.invitees ? `<div class="invitees">Invités : ${esc(m.invitees)}</div>` : ''}`;
 }
 
+// Campagne créée par la personne (variante B) : la question posée et les retours reçus.
+function campaignHtml(c) {
+  const done = c.responses.filter((r) => r.state === 'done');
+  const live = c.responses.filter((r) => r.state !== 'done' && r.state !== 'stopped').length;
+  return `<h3>Campagne · ${esc(c.title)}</h3>
+    <p class="quote">${esc(c.question)}</p>
+    <p class="invitees">${done.length} réponse${done.length > 1 ? 's' : ''} complète${done.length > 1 ? 's' : ''}${live ? ` · ${live} en cours` : ''} · ${esc(ago(c.created_at))}</p>
+    ${done.map((r, i) => `<p style="margin-top:10px"><strong>Retour ${i + 1}</strong><br>${(r.analysis?.lemo_lines || []).filter((l) => !/^d[ée]tail/i.test(l.label)).slice(0, 3).map((l) => `<strong>${esc(l.label)} :</strong> ${esc(l.text)}`).join('<br>')}</p>`).join('')}`;
+}
+
+// Test A/B de la fin de parcours : combien voient, cliquent, vont au bout, de chaque côté.
+function abHtml(ab) {
+  const pct = (n, base) => (base ? `${Math.round((n / base) * 100)} %` : '');
+  const rows = (v, steps) => steps.map(([label, n, base]) => `<div class="frow"><span>${label}</span><div><div class="bar" style="width:${Math.max(1.5, (n / Math.max(1, v.shown)) * 100)}%;${base === 'b' ? 'background:#E8856B' : ''}"></div></div><strong>${n}<span class="soft" style="color:var(--soft);font-weight:400;font-size:12px;display:block">${pct(n, v.shown)}</span></strong></div>`).join('');
+  return `<h2 style="font-size:16px;font-weight:500;margin-top:28px">Test A/B · fin de parcours</h2>
+  <p class="sub" style="font-size:13px">Un parcours sur deux reçoit A, l’autre B. Pourcentages calculés sur les personnes qui ont vu le message.</p>
+  <section class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:12px">
+    <div class="card"><h2 style="font-size:16px;font-weight:500">A · « Envoyer l’invitation »</h2>
+      <p class="sub" style="font-size:13px">5 invitations à transférer, message prêt.</p>
+      <div style="margin-top:8px">${rows(ab.A, [['Message vu', ab.A.shown], ['Bouton touché', ab.A.click], ['Invités arrivés', ab.A.arrived], ['Invités allés au bout', ab.A.done]])}</div></div>
+    <div class="card"><h2 style="font-size:16px;font-weight:500">B · « Créer ma campagne »</h2>
+      <p class="sub" style="font-size:13px">Sujet choisi, question rédigée par LEMO, 5 personnes.</p>
+      <div style="margin-top:8px">${rows(ab.B, [['Message vu', ab.B.shown, 'b'], ['Bouton touché', ab.B.click, 'b'], ['Campagne créée', ab.B.created, 'b'], ['Campagne transférée', ab.B.forwarded, 'b'], ['Participants arrivés', ab.B.started, 'b'], ['Réponses complètes', ab.B.done, 'b']])}</div></div>
+  </section>`;
+}
+
 function personHtml(m) {
   const r = m.report || {};
   const [dot, label] = status(m);
@@ -180,7 +207,7 @@ function personHtml(m) {
   return `<article class="person" data-id="${esc(m.id)}">
   <div class="row">
     <div class="id"><div class="avatar">${esc(initials(m.first_name))}</div><div><div class="name">${esc(m.first_name || 'Sans prénom')}</div>
-      <div class="meta">${esc(ago(m.updated_at))} · invité par ${esc(m.inviter || 'lien général')}${m.invite_code ? ` · ${m.invited_count}/${m.invites_total} invitations` : ''}</div></div></div>
+      <div class="meta">${esc(ago(m.updated_at))} · invité par ${esc(m.inviter || 'lien général')}${m.invite_code ? ` · ${m.invited_count}/${m.invites_total} invitations` : ''}${m.variant ? ` · ${m.variant === 'A' ? 'A : invitation' : 'B : campagne'}` : ''}</div></div></div>
     <div class="moment">${moment}</div>
     <div class="state"><span class="pill"><span class="dot ${dot}"></span>${esc(label)}</span></div>
     <div class="actions">
@@ -195,6 +222,7 @@ function personHtml(m) {
       ${lines.length ? `<h3>Vu par LEMO${r.thin ? ' · sur un exemple' : ''}</h3><p>${lines.map((l) => `<strong>${esc(l.label)} :</strong> ${esc(l.text)}`).join('<br>')}</p>` : ''}
       ${m.phone ? `<h3>Téléphone</h3><p>${esc(phoneFmt(m.phone))}</p>` : ''}
       <h3>Invitations</h3>${invitesHtml(m)}
+      ${(m.campaigns || []).map(campaignHtml).join('')}
     </div>
     <div>
       ${canWrite ? `<h3>Message prêt (modifiable)</h3>
@@ -241,7 +269,7 @@ ${script}
 </body></html>`;
 }
 
-export function earlyAdoptersView({ company, funnel, members, counts, filter, inviteUrl }) {
+export function earlyAdoptersView({ company, funnel, members, counts, filter, inviteUrl, ab }) {
   const steps = [
     ['Page ouverte', funnel.views],
     ['Prénom saisi', funnel.continues],
@@ -266,6 +294,7 @@ export function earlyAdoptersView({ company, funnel, members, counts, filter, in
       <section class="card funnel"><h2>Du lien à la conversation</h2><div style="margin-top:8px">
         ${steps.map(([l, n]) => `<div class="frow"><span>${l}</span><div><div class="bar" style="width:${Math.max(1.5, (n / top) * 100)}%"></div></div><strong>${n}</strong></div>`).join('')}
       </div></section>
+      ${ab ? abHtml(ab) : ''}
       <nav class="tabs">${tabs.map(([k, l]) => `<a href="?f=${k}" class="${filter === k ? 'on' : ''}">${l}<span>${counts[k]}</span></a>`).join('')}</nav>
       <section class="people">${members.length ? members.map(personHtml).join('') : '<div class="empty">Personne ici pour l’instant.</div>'}</section>
 `;
@@ -351,4 +380,27 @@ button:hover{background:#6B7CFF}
   ${error ? `<p class="err">${esc(error)}</p>` : ''}
 </main>
 </body></html>`;
+}
+
+
+// Page ouverte par un participant (lien transféré par un dirigeant) : aperçu WhatsApp clair, puis WhatsApp aussitôt.
+export function campaignPage({ campaign: c, wa, base }) {
+  const vous = c.register === 'vous';
+  const title = vous ? `${c.leader || 'On'} vous demande votre avis` : `${c.leader || 'On'} te demande ton avis`;
+  const desc = 'Deux petites questions, une minute, sur WhatsApp. Par écrit ou en vocal.';
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF">${APP_ICONS}<title>${esc(title)}</title>
+<meta property="og:type" content="website"><meta property="og:site_name" content="LEMO">
+<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+<meta property="og:image" content="${esc(base)}/public/lemo-thumb.png"><meta property="og:image:width" content="200"><meta property="og:image:height" content="200">
+<meta name="twitter:card" content="summary">
+<style>
+@font-face{font-family:'Montserrat';font-style:normal;font-weight:100 900;font-display:swap;src:url(/public/montserrat.woff2) format('woff2')}
+*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#fff;color:#1A1A1A}
+body{font-family:'Montserrat',-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}
+h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin-top:10px}p{color:#555;margin-top:10px;font-size:15px}
+a.b{display:inline-block;margin-top:26px;background:#1A1A1A;color:#fff;text-decoration:none;border-radius:6px;padding:14px 22px;font-weight:500}
+</style></head><body><main>
+<h1>${esc(title)}</h1><p>${esc(desc)}</p><a class="b" href="${esc(wa)}">Ouvrir WhatsApp</a>
+</main><script>location.replace(${JSON.stringify(wa).replace(/</g, '\\u003c')})</script></body></html>`;
 }

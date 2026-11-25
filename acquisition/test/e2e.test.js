@@ -414,8 +414,17 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.doesNotMatch(synth, /plus riche|[—–]/);
   const invite = outs[6];
   assert.match(invite, /^Merci Florio\. Tes 5 invitations sont débloquées\./);
-  const share = decodeURIComponent(invite.match(/\[Envoyer l'invitation\] https:\/\/wa\.me\/\?text=(.+)$/)[1]);
+  // Variante A (premier parcours) : le bouton passe par un lien suivi, puis ouvre le partage WhatsApp
+  assert.equal(m.variant, 'A');
+  const go = invite.match(/\[Envoyer l'invitation\] (\S+)$/)[1];
+  assert.match(go, new RegExp(`/go/i/${m.invite_code}$`));
+  const BROWSER = { 'user-agent': 'Mozilla/5.0 (iPhone) Safari' };
+  const click = await fetch(go.replace(/^https?:\/\/[^/]+/, base), { redirect: 'manual', headers: BROWSER });
+  assert.equal(click.status, 302);
+  const share = decodeURIComponent(click.headers.get('location').match(/^https:\/\/wa\.me\/\?text=(.+)$/)[1]);
   assert.match(share, new RegExp(`^Je t'invite sur LEMO.*/i/${m.invite_code}$`));
+  await fetch(go.replace(/^https?:\/\/[^/]+/, base), { redirect: 'manual', headers: { 'user-agent': 'WhatsApp/2.24.1 A' } });
+  assert.equal((await one(`select count(*)::int as n from ab_events where member_id=$1 and kind='cta_click'`, [m.id])).n, 1, 'le robot d’aperçu ne compte pas');
   assert.ok(!(await outsOf('33699990000')).length, 'plus d’alerte « nouvel early adopter »');
 
   // Réponse trop courte : LEMO le dit, analyse un exemple universel
@@ -542,4 +551,63 @@ test('synthèse : trois lignes seulement, et transposition en entreprise pour un
   assert.match(privateMoment, /^_Ton moment est personnel\. Transposons-le à un hôtel ou un spa, là où une entreprise vend l'expérience\._\n\n\*Vu par LEMO, à chaud\*/);
   assert.doesNotMatch(privateMoment, /Détail/);
   assert.doesNotMatch(synthesisMessage({ ...base, business_context: null }), /Transposons/);
+});
+
+test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le dirigeant', async () => {
+  process.env.AB_FORCE = 'B';
+  const L = '33622223333';
+  const P1 = '33644445555';
+  const outsOf = async (phone) => (await query(`select body from messages where phone_hash=$1 and direction='out' order by seq`, [phoneHash(phone)])).map((r) => r.body);
+  try {
+    await say(L, "Hey LEMO, c'est Mehdi !");
+    await say(L, "Ce matin, réunion d'équipe tendue sur le planning de la saison : personne n'osait parler, puis une proposition a tout débloqué.");
+    await say(L, "Quand Sarah a proposé de tester deux équipes, l'ambiance a changé d'un coup.");
+  } finally {
+    delete process.env.AB_FORCE;
+  }
+  let lm = await one('select * from members where phone_hash=$1', [phoneHash(L)]);
+  assert.equal(lm.variant, 'B');
+  assert.match(await lastOut(L), /^Merci Mehdi\. Tes 5 invitations sont débloquées\.\n\nUtilise-les pour lancer ta propre campagne/);
+
+  // Clic sur le bouton « Créer ma campagne », puis le sujet
+  await say(L, 'Créer ma campagne', { buttonId: 'campaign_start' });
+  assert.match(await lastOut(L), /Sur quel moment veux-tu le ressenti de tes 5 personnes/);
+  await say(L, "L'accueil de mes clients au restaurant ce midi");
+  const ready = await lastOut(L);
+  assert.match(ready, /^\*Ta campagne est prête\*\n\*Sujet :\* .+\n\*La question :\* « .+ »/);
+  const c = await one('select * from campaigns where member_id=$1', [lm.id]);
+  assert.match(ready, new RegExp(`\\[Envoyer la campagne\\] .*/go/c/${c.code}$`));
+  assert.match(c.forward_message, new RegExp(`^Salut, c'est Mehdi\\. J'aimerais ton ressenti, à chaud.*sans ton numéro\\. Pour répondre : .*/c/${c.code}$`));
+
+  // Le dirigeant transfère (clic suivi), le participant ouvre le lien puis WhatsApp
+  const BROWSER = { 'user-agent': 'Mozilla/5.0 (iPhone) Safari' };
+  const fwd = await fetch(`${base}/go/c/${c.code}`, { redirect: 'manual', headers: BROWSER });
+  assert.equal(decodeURIComponent(fwd.headers.get('location').replace('https://wa.me/?text=', '')), c.forward_message);
+  const landing = await fetch(`${base}/c/${c.code}`, { headers: BROWSER }).then((r) => r.text());
+  assert.match(landing, /og:title" content="Mehdi te demande ton avis"/);
+  assert.match(landing, new RegExp(`Hey%20LEMO%2C%20je%20r%C3%A9ponds%20%C3%A0%20Mehdi%20\\(campagne%20${c.code}\\)`));
+
+  // Le participant répond : présentation + question, relance, merci ; le dirigeant reçoit le retour
+  await say(P1, `Hey LEMO, je réponds à Mehdi (campagne ${c.code})`);
+  const p = await outsOf(P1);
+  assert.match(p[0], /^Bonjour, je suis LEMO\. Mehdi aimerait ton ressenti, à chaud\. Ta réponse lui sera transmise, sans ton numéro\./);
+  assert.equal(p[1], c.question);
+  assert.equal((await one('select state from members where phone_hash=$1', [phoneHash(P1)])), null, 'un participant n’est pas inscrit comme early adopter');
+  await say(P1, "On a attendu vingt minutes avant qu'on nous installe, personne ne nous a prévenus.");
+  assert.match(await lastOut(P1), /\?/);
+  await say(P1, "Le serveur s'est excusé en nous offrant le café, ça a tout rattrapé.");
+  assert.match(await lastOut(P1), /^Merci, ton retour est transmis à Mehdi\. LEMO est en accès sur invitation/);
+  const r = await one('select * from campaign_responses where phone_hash=$1', [phoneHash(P1)]);
+  assert.equal(r.state, 'done');
+  assert.equal(r.phone, null, 'numéro du participant effacé');
+  assert.match(await lastOut(L), /^\*Retour 1 · .+\*\n\*Ressenti :\* /);
+
+  // Le CRM : test A/B et campagne dans la fiche
+  const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
+  const crm = await fetch(`${base}/early-adopters?f=all`, { headers: { cookie } }).then((r) => r.text());
+  assert.match(crm, /Test A\/B · fin de parcours/);
+  assert.match(crm, /Créer ma campagne/);
+  assert.match(crm, /Réponses complètes/);
+  assert.match(crm, /« Envoyer l’invitation »|Envoyer l’invitation/);
+  assert.match(crm, new RegExp(`Campagne · ${c.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
