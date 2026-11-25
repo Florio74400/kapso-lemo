@@ -386,7 +386,8 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.equal(outs.length, 4, 'quatre messages d’accueil');
   assert.match(outs[0], /^Hello Florio\. Je suis LEMO/);
   assert.match(outs[1], /5 invitations, débloquées après ta première expérience/);
-  assert.match(outs[2], /Le plus simple pour comprendre.*confidentielles : seul Florio, le fondateur.*Écris STOP/);
+  assert.match(outs[2], /Le plus simple pour comprendre.*confidentielles\. Seul Florio, le fondateur, pourra te recontacter\. Écris STOP/);
+  assert.doesNotMatch(outs[2], /lit|lire|accès/);
   assert.match(outs[3], /événement marquant de ta journée/);
 
   // Événement marquant -> relance
@@ -403,20 +404,15 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.equal(m.invites_total, 5);
   assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
   outs = await outsOf(P);
-  assert.equal(outs.length, 9, 'schéma, synthèse, vue dirigeant puis invitations');
+  assert.equal(outs.length, 7, 'synthèse puis invitations, sans image');
   assert.match(outs[3], /^Peux-tu me décrire un événement marquant de ta journée \?/);
-  assert.match(outs[5], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
-  const card = await fetch(`${base}/m/${m.card_token}.png`);
-  assert.equal(card.headers.get('content-type'), 'image/png');
-  const synth = outs[6];
+  assert.ok(!outs.some((b) => /^\[image\]/.test(b)), 'ni courbe ni vue dirigeant');
+  const synth = outs[5];
   assert.match(synth, /^\*Vu par LEMO, à chaud\*\n\*Ressenti :\* /);
   assert.match(synth, /\n\n\*Enquête de satisfaction, à J\+4\*\nIl aurait fallu retrouver le mail.*Réponse type : \*7\/10\*, « Bien, rien à signaler\. »/);
   assert.match(synth, /\n\n\*La différence\*\nTu as raconté ce moment à chaud.*WhatsApp.*le moment le plus fort et la fin/);
   assert.doesNotMatch(synth, /plus riche|[—–]/);
-  assert.match(outs[7], /^\[image\] .*\/v\/dirigeant\.png$/);
-  const dash = await fetch(`${base}/v/dirigeant.png`);
-  assert.equal(dash.headers.get('content-type'), 'image/png');
-  const invite = outs[8];
+  const invite = outs[6];
   assert.match(invite, /^Merci Florio\. Tes 5 invitations sont débloquées\./);
   const share = decodeURIComponent(invite.match(/\[Envoyer l'invitation\] https:\/\/wa\.me\/\?text=(.+)$/)[1]);
   assert.match(share, new RegExp(`^Je t'invite sur LEMO.*/i/${m.invite_code}$`));
@@ -428,8 +424,8 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   await say(T, 'Un café.');
   await say(T, 'Bien.');
   const t = await outsOf(T);
-  assert.match(t[t.length - 5], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
-  assert.match(t[t.length - 3], /^\*Vu par LEMO, à chaud\*/);
+  assert.match(t[t.length - 3], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
+  assert.match(t[t.length - 2], /^\*Vu par LEMO, à chaud\*/);
 
   // Lien personnel : « Florio t'invite sur LEMO », puis l'invité est rattaché à Florio
   const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
@@ -489,4 +485,21 @@ test('alerte au fondateur : notification push sans aucun détail confié', async
   assert.equal(calls[0].body.topic, 'lemo-test-topic');
   assert.match(calls[0].body.title, /Franz a terminé son parcours/);
   assert.match(calls[0].body.click, /\/early-adopters$/);
+});
+
+test('synthèse : trois lignes seulement, et transposition en entreprise pour un moment privé', async () => {
+  const { synthesisMessage } = await import('../src/onboarding.js');
+  const base = {
+    lemo_lines: [
+      { label: 'Ressenti', text: 'détente au début, agacement ensuite' },
+      { label: 'Bascule', text: 'l’eau froide au bout de deux minutes' },
+      { label: 'Angle mort', text: 'un hôtel ne saurait jamais que l’eau chaude manque' },
+      { label: 'Détail', text: 'pression faible' },
+    ],
+    survey_score: 8, survey_comment: 'Chambre propre.', survey_lost: 'Le coup de froid aurait disparu.', quote: null,
+  };
+  const privateMoment = synthesisMessage({ ...base, business_context: 'à un hôtel ou un spa' });
+  assert.match(privateMoment, /^_Ton moment est personnel\. Transposons-le à un hôtel ou un spa, là où une entreprise vend l'expérience\._\n\n\*Vu par LEMO, à chaud\*/);
+  assert.doesNotMatch(privateMoment, /Détail/);
+  assert.doesNotMatch(synthesisMessage({ ...base, business_context: null }), /Transposons/);
 });

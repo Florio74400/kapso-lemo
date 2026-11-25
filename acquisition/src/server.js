@@ -10,7 +10,6 @@ import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
-import { cardPng } from './card.js';
 import { dashboardPng } from './dashboard-card.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
 import { PRESETS, presetConfig } from './optins.js';
@@ -90,15 +89,8 @@ export function createApp() {
   // immédiate vers la conversation WhatsApp avec « Hey LEMO ! » prérempli. Rien à installer.
   app.use('/public', express.static(new URL('../public', import.meta.url).pathname, { maxAge: '7d' }));
   // Schéma personnalisé envoyé sur WhatsApp à la fin de la première expérience (adresse non devinable).
-  // « Vue dirigeant » fictive envoyée à la fin du parcours (même image pour tous).
+  // « Vue dirigeant » fictive (plus envoyée dans le parcours ; gardée pour en discuter en interne).
   app.get('/v/dirigeant.png', (_req, res) => res.set('Content-Type', 'image/png').set('Cache-Control', 'public, max-age=86400').send(dashboardPng()));
-  app.get('/m/:file', async (req, res) => {
-    const token = req.params.file.replace(/\.png$/, '');
-    const m = token.length >= 12 ? await one(`select first_name, report from members where card_token=$1`, [token]) : null;
-    if (!m?.report) return res.status(404).send('Introuvable');
-    const report = typeof m.report === 'string' ? JSON.parse(m.report) : m.report;
-    res.set('Content-Type', 'image/png').set('Cache-Control', 'public, max-age=86400').send(cardPng(report, m.first_name));
-  });
 
   // Suivi de l'entonnoir : clic sur « Continuer » (le prénom n'est pas enregistré ici).
   app.post('/i/evt', async (req, res) => {

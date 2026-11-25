@@ -345,8 +345,8 @@ export const ExperienceReport = z.object({
   blind_spot: z.string().describe('Ce qu’une enquête de satisfaction n’aurait pas capté, 20 mots maximum.'),
   details: z.array(z.string()).describe('0 à 5 signaux concrets (cause, attente, irritant, suggestion), 8 mots maximum chacun.'),
   quote: z.string().nullable().describe('Extrait COPIÉ MOT POUR MOT du récit, 15 mots maximum. null si rien de parlant ou si on analyse un exemple.'),
-  lemo_lines: z.array(Line).describe('3 ou 4 lignes « Vu par LEMO », dans cet ordre : Ressenti (le début et la fin), Bascule, Angle mort, puis éventuellement un Détail.'),
-  chart_points: z.array(z.string()).describe('Exactement 3 lignes très courtes pour le schéma, 7 mots maximum chacune, au format « Ressenti : … », « Bascule : … », « Angle mort : … ».'),
+  business_context: z.string().nullable().describe('null si le moment se passe déjà chez une entreprise qui vend une expérience (commerce, hôtel, restaurant, transport, rendez-vous pro…). Sinon (moment privé : douche chez un ami, dîner en famille…), le lieu marchand le plus proche, introduit par « à » ou « dans », 6 mots maximum. Ex : « à un hôtel ou un spa ».'),
+  lemo_lines: z.array(Line).describe('Exactement 3 lignes « Vu par LEMO », dans cet ordre : Ressenti (le début et la fin), Bascule, Angle mort. Si business_context est rempli, l’angle mort dit ce que l’entreprise de ce lieu apprendrait.'),
   survey_score: z.number().int().describe('Note sur 10 typique qu’une personne donnerait à J+4 pour ce type de moment.'),
   survey_comment: z.string().describe('Commentaire typique à J+4, 5 mots maximum, banal (ex : « Bien, rien à signaler. »).'),
   survey_lost: z.string().describe('Ce que l’enquête à J+4 aurait perdu : une phrase de 20 mots maximum, tutoiement, qui cite 2 éléments concrets du récit. Ex : « La pression des frais déjà engagés et l’enjeu de ta rémunération auraient disparu. »'),
@@ -369,7 +369,7 @@ export async function experienceReport({ experience, followup, answer, firstName
       ],
       survey_score: 7,
       survey_comment: 'Bien, rien à signaler.',
-      chart_points: ['Ressenti : tension, puis soulagement', 'Bascule : la situation se débloque', 'Angle mort : ce qui a tout changé'],
+      business_context: null,
       survey_lost: 'La tension du début et le déclic qui a tout changé auraient disparu.',
       founder_message: `Salut ${firstName || ''}, c’est Florio, fondateur de LEMO. Merci pour ton moment, ton déclic m’a parlé. Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,'),
     };
@@ -379,6 +379,7 @@ export async function experienceReport({ experience, followup, answer, firstName
     `Tu es LEMO, moteur d'analyse émotionnelle en temps réel. Analyse le récit d'une personne (événement marquant + réponse à une relance).
 ${thin ? `Le récit est trop maigre pour une analyse honnête. Imagine un exemple d'expérience bref (25 mots maximum), universel, valable pour tous les secteurs, si possible dans l'esprit du peu qu'elle a dit, et mets-le dans « example ». Puis analyse CET exemple (pas son récit), en t'adressant à elle comme si elle l'avait vécu (« tu »). quote = null.` : 'example = null.'}
 Extrais ce que LEMO capte pendant l'expérience : émotions et moments, point de bascule, angle mort, signaux concrets, une citation exacte.
+LEMO est un outil pour les entreprises : si le moment est privé et ne correspond à aucune expérience qu'une entreprise vend, transpose-le au lieu marchand le plus proche (business_context) et raisonne comme cette entreprise pour l'angle mort et l'enquête à J+4.
 Puis ce qu'une enquête de satisfaction envoyée 4 jours après obtient TYPIQUEMENT pour ce genre de moment (note et commentaire banal) : le souvenir lisse le vécu.
 Les lignes sont lues sur WhatsApp : phrases complètes, concrètes, professionnelles, pas télégraphiques, sans emoji, sans gras.
 N'utilise jamais de tiret long (—) ni de tiret moyen (–) : préfère les deux-points, la virgule ou une nouvelle phrase.

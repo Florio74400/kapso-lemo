@@ -179,6 +179,7 @@ $('phone').onchange=refresh;refresh();setInterval(refresh,3000);
 // Synthèse en texte brut (sans les * du gras WhatsApp) pour le CRM.
 const synthesisText = (r) => [
   r.example ? `Exemple : « ${r.example} »` : null,
+  r.business_context ? `Transposé ${r.business_context}` : null,
   'Vu par LEMO',
   ...(r.lemo_lines || []).map((l) => `${l.label} : ${l.text}`),
   r.quote ? `« ${r.quote} »` : null,
@@ -214,7 +215,6 @@ export function earlyAdoptersPage({ funnel, members }) {
 ${m.experience ? `<p class="mute">Son moment</p><blockquote>${esc(m.experience)}</blockquote>` : ''}
 ${m.blindspot ? `<p class="mute">${esc(m.followup || 'Relance')}</p><blockquote>${esc(m.blindspot)}</blockquote>` : ''}
 ${r.lemo_lines ? `<p class="mute">Synthèse reçue${r.thin ? ' (sur un exemple : réponse trop courte)' : ''}</p><blockquote>${esc(synthesisText(r))}</blockquote>` : ''}
-${m.card_token ? `<p class="mute">Schéma envoyé</p><img src="/m/${esc(m.card_token)}.png" alt="" style="width:100%;max-width:420px;border:1px solid var(--line);border-radius:8px">` : ''}
 ${r.founder_message ? `<p class="mute">Message prêt</p><blockquote>${esc(r.founder_message)}</blockquote>` : ''}
 </details></td>
 <td>${m.opted_out_at ? '<span class="pill high">STOP</span> Ne plus contacter' : esc(STEP_LABEL[m.state] || m.state)}<div class="mute">Invité par ${esc(m.inviter || 'lien général')}</div><div class="mute">Invitations : ${m.invited_count}/${m.invites_total}</div></td>
