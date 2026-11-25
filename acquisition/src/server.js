@@ -10,6 +10,7 @@ import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
+import { earlyAdoptersView } from './crm-view.js';
 import { dashboardPng } from './dashboard-card.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
 import { PRESETS, presetConfig } from './optins.js';
@@ -146,7 +147,7 @@ export function createApp() {
     loginAttempts.delete(ip);
     const secure = config.publicUrl.startsWith('https') ? '; Secure' : '';
     res.setHeader('Set-Cookie', `lemo_session=${encodeURIComponent(makeToken(c.id))}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${secure}`);
-    res.redirect('/');
+    res.redirect('/early-adopters');
   });
   app.get('/logout', (_req, res) => {
     res.setHeader('Set-Cookie', 'lemo_session=; Path=/; Max-Age=0');
@@ -251,18 +252,35 @@ export function createApp() {
     res.redirect(`/collections/${col.id}`);
   });
 
+  // CRM Early adopters : qui recontacter, avec un message WhatsApp prêt (mise en page dédiée, pensée pour le mobile).
+  const MEMBER_FILTERS = {
+    todo: `m.report is not null and m.contacted_at is null and m.opted_out_at is null`,
+    wip: `m.report is null and m.opted_out_at is null`,
+    done: `m.contacted_at is not null and m.opted_out_at is null`,
+    all: `true`,
+  };
   app.get('/early-adopters', auth, async (req, res) => {
+    const filter = MEMBER_FILTERS[req.query.f] ? req.query.f : 'todo';
     const funnel = await one(`select
       (select count(*)::int from invite_events where kind='view') as views,
       (select count(*)::int from invite_events where kind='continue') as continues,
       (select count(*)::int from members) as hey,
-      (select count(*)::int from members where experience is not null) as told,
+      (select count(*)::int from members where experience is not null or opted_out_at is not null) as told,
       (select count(*)::int from members where report is not null) as reported,
       (select count(*)::int from members where invited_by is not null) as invited`);
-    const members = await query(`select m.*, i.first_name as inviter, (select count(*)::int from members x where x.invited_by=m.id) as invited_count
-      from members m left join members i on i.id=m.invited_by order by m.updated_at desc limit 300`);
+    const counts = await one(`select ${Object.entries(MEMBER_FILTERS).map(([k, w]) => `count(*) filter (where ${w})::int as ${k}`).join(', ')} from members m`);
+    const members = await query(`select m.*, i.first_name as inviter from members m left join members i on i.id=m.invited_by
+      where ${MEMBER_FILTERS[filter]} order by m.updated_at desc limit 300`);
     for (const m of members) if (typeof m.report === 'string') m.report = JSON.parse(m.report);
-    res.send(page(req, 'Early adopters', V.earlyAdoptersPage({ funnel, members })));
+    // Lien à copier : le lien personnel du fondateur s'il a fait le parcours (ses invités lui sont rattachés), sinon le lien général.
+    const owner = (req.company.owner_phones || [])[0];
+    const me = owner ? await one('select invite_code from members where phone_hash=$1', [phoneHash(owner)]) : null;
+    const inviteUrl = `${config.publicUrl}/i${me?.invite_code ? `/${me.invite_code}` : ''}`;
+    res.send(earlyAdoptersView({ company: req.company, funnel, members, counts, filter, inviteUrl }));
+  });
+  app.post('/early-adopters/:id/contacted', auth, async (req, res) => {
+    await query('update members set contacted_at=now() where id::text=$1 and opted_out_at is null', [req.params.id]);
+    res.sendStatus(204);
   });
 
   app.get('/settings', auth, (req, res) => res.send(page(req, 'Réglages', V.settingsPage({ company: req.company, saved: req.query.saved }))));

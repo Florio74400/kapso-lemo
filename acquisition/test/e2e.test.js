@@ -449,13 +449,26 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
 
   // CRM : entonnoir et fiche avec bouton « Écrire »
   const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
+  const login = await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) });
+  assert.equal(login.headers.get('location'), '/early-adopters', 'on arrive directement sur les early adopters');
   const crm = await fetch(`${base}/early-adopters`, { headers: { cookie } }).then((r) => r.text());
-  assert.match(crm, /Page ouverte/);
-  assert.match(crm, /Invitations : 1\/5/);
-  assert.match(crm, /Vu par LEMO/);
-  assert.match(crm, /wa\.me\/33688881111\?text=/);
-  assert.match(crm, /STOP<\/span> Ne plus contacter/);
-  assert.doesNotMatch(crm, /wa\.me\/33655554444/);
+  assert.match(crm, /<h1>Early adopters<\/h1>/);
+  assert.match(crm, /Du lien à la conversation/);
+  assert.match(crm, /Copier mon lien d’invitation/);
+  assert.match(crm, /href="\/">.*Collectes<\/a>/s);
+  assert.match(crm, /href="\/logout"/);
+  assert.match(crm, /data-phone="33688881111"/, 'Florio est à recontacter, avec son message prêt');
+  assert.match(crm, /Salut Florio, c’est Florio, fondateur de LEMO/);
+  // Après « Envoyer depuis mon WhatsApp » : passe dans « Contactés »
+  const florio = await one('select id from members where phone_hash=$1', [phoneHash(P)]);
+  assert.equal((await fetch(`${base}/early-adopters/${florio.id}/contacted`, { method: 'POST', headers: { cookie } })).status, 204);
+  assert.doesNotMatch(await fetch(`${base}/early-adopters`, { headers: { cookie } }).then((r) => r.text()), /data-phone="33688881111"/);
+  const done = await fetch(`${base}/early-adopters?f=done`, { headers: { cookie } }).then((r) => r.text());
+  assert.match(done, /Contacté à l&#39;instant/);
+  const all = await fetch(`${base}/early-adopters?f=all`, { headers: { cookie } }).then((r) => r.text());
+  assert.match(all, /STOP, ne plus contacter/);
+  assert.doesNotMatch(all, /data-phone="33655554444"/);
+  assert.equal((await fetch(`${base}/early-adopters/${florio.id}/contacted`, { method: 'POST', redirect: 'manual' })).status, 302, 'réservé au compte connecté');
 });
 
 test('citation : affichée seulement si elle existe mot pour mot', async () => {
