@@ -43,12 +43,6 @@ export function layout({ title, body, company, banner }) {
 <main>${banner?.text ? `<div class="banner">${banner.text}</div>` : ''}${body}</main></body></html>`;
 }
 
-export function loginPage(error) {
-  return `<div class="card" style="max-width:380px;margin:40px auto"><h1>Connexion</h1>
-<form method="post" action="/login"><label>E-mail</label><input name="email" type="email" required autocomplete="username">
-<label>Mot de passe</label><input name="password" type="password" required autocomplete="current-password">
-${error ? `<p style="color:var(--bad)">${esc(error)}</p>` : ''}<p><button>Se connecter</button></p></form></div>`;
-}
 
 export function dashboardPage({ collections, presets = {} }) {
   const rows = collections
@@ -141,19 +135,6 @@ ${alertData ? alertsBlock(col, alertData) : ''}
 <h2>Retours (${report.n})</h2>${fb || '<p class="mute">Aucun retour pour l\'instant.</p>'}`;
 }
 
-export function settingsPage({ company, saved }) {
-  return `<h1>Réglages</h1>${saved ? '<p style="color:var(--good)">Enregistré.</p>' : ''}
-<form class="card" method="post" action="/settings">
-<label>Numéros WhatsApp des dirigeants (format international, séparés par des virgules)</label>
-<input name="owner_phones" value="${esc(company.owner_phones.join(', '))}" placeholder="33612345678">
-<p class="mute">Ces numéros peuvent créer des collectes et demander un bilan en écrivant à LEMO.</p>
-<label>Lecteurs : direction, marketing, exploitation (format international, séparés par des virgules)</label>
-<input name="reader_phones" value="${esc((company.reader_phones || []).join(', '))}" placeholder="33611223344">
-<p class="mute">Ces numéros peuvent interroger les retours clients sur WhatsApp (« Y a-t-il eu des problèmes aujourd'hui à la Flégère ? ») et demander un bilan, sans pouvoir créer de collecte.</p>
-<label>Seuil de confidentialité (répondants minimum avant synthèse)</label><input name="privacy_threshold" type="number" min="1" max="100" value="${company.privacy_threshold}">
-<label>Conservation des retours (jours)</label><input name="retention_days" type="number" min="1" max="730" value="${company.retention_days}">
-<p><button>Enregistrer</button></p></form>`;
-}
 
 export function demoPage({ collections, ownerPhone }) {
   return `<h1>Simulateur WhatsApp</h1>

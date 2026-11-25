@@ -455,10 +455,34 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.match(crm, /<h1>Early adopters<\/h1>/);
   assert.match(crm, /Du lien à la conversation/);
   assert.match(crm, /Copier mon lien d’invitation/);
-  assert.match(crm, /href="\/">.*Collectes<\/a>/s);
+  assert.doesNotMatch(crm, /Collectes/);
+  assert.match(crm, /href="\/settings">.*Réglages<\/a>/s);
   assert.match(crm, /href="\/logout"/);
   assert.match(crm, /data-phone="33688881111"/, 'Florio est à recontacter, avec son message prêt');
   assert.match(crm, /Salut Florio, c’est Florio, fondateur de LEMO/);
+  // Invitations : 1 invité arrivé sur 5, on en ajoute 5
+  const florioId = (await one('select id from members where phone_hash=$1', [phoneHash(P)])).id;
+  assert.match(crm, /<strong>1<\/strong> invité arrivé · <strong>4<\/strong> restantes sur 5/);
+  assert.match(crm, /Invités : Marc/);
+  const add = await fetch(`${base}/early-adopters/${florioId}/invites`, { method: 'POST', redirect: 'manual', headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'add=5' });
+  assert.equal(add.status, 303);
+  assert.equal((await one('select invites_total from members where id=$1', [florioId])).invites_total, 10);
+  assert.equal((await fetch(`${base}/early-adopters/${florioId}/invites`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'add=5' })).status, 302, 'réservé au compte connecté');
+
+  // Réglages : e-mail d'alerte et numéro
+  const st = await fetch(`${base}/settings`, { method: 'POST', redirect: 'manual', headers: { cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'alert_email=alerte%40exemple.fr&owner_phone=33611111111' });
+  assert.equal(st.headers.get('location'), '/settings?saved=1');
+  const settings = await fetch(`${base}/settings`, { headers: { cookie } }).then((r) => r.text());
+  assert.match(settings, /value="alerte@exemple\.fr"/);
+  assert.match(settings, /Enregistré|E-mail d’alerte/);
+  assert.equal((await fetch(`${base}/`, { redirect: 'manual', headers: { cookie } })).headers.get('location'), '/early-adopters');
+
+  // Connexion aux couleurs de LEMO
+  const loginPage = await fetch(`${base}/login`).then((r) => r.text());
+  assert.match(loginPage, /<title>Connexion · LEMO<\/title>/);
+  assert.match(loginPage, /<svg[^>]*viewBox="0 0 864 278"/);
+  assert.match(loginPage, /placeholder="E-mail"/);
+
   // Après « Envoyer depuis mon WhatsApp » : passe dans « Contactés »
   const florio = await one('select id from members where phone_hash=$1', [phoneHash(P)]);
   assert.equal((await fetch(`${base}/early-adopters/${florio.id}/contacted`, { method: 'POST', headers: { cookie } })).status, 204);

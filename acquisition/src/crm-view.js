@@ -86,6 +86,19 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.01em}
 .detail .send{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 .empty{padding:40px 20px;text-align:center;color:var(--mute)}
 .note{color:var(--mute);font-size:13px;margin-top:10px}
+.inv{margin-top:2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inv form{display:inline}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;font-size:13px;cursor:pointer}
+.chip:hover{background:var(--hover)}
+.invitees{color:var(--mute);font-size:13px;margin-top:6px}
+.form{max-width:560px;display:grid;gap:18px}
+.field label{display:block;font-size:14px;font-weight:500;margin-bottom:6px}
+.field input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font:inherit;font-size:15px;background:#fff}
+.field input:focus{outline:3px solid rgba(46,107,255,.15);border-color:#999}
+.field .help{color:var(--mute);font-size:13px;margin-top:6px}
+.saved{color:var(--green-ink);font-size:14px}
+.kv{display:grid;grid-template-columns:160px 1fr;gap:8px 16px;font-size:14px}.kv span{color:var(--mute)}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:#F4F4F6;border-radius:6px;padding:2px 6px;word-break:break-all}
 @media (max-width:1100px){.row{grid-template-columns:minmax(160px,1fr) minmax(0,1.6fr) auto}.row .state{display:none}}
 @media (max-width:820px){
   .side{position:fixed;z-index:20;left:0;top:0;transform:translateX(-100%);transition:transform .25s;box-shadow:0 0 40px rgba(0,0,0,.12)}
@@ -108,6 +121,7 @@ h1{font-size:24px;font-weight:600;letter-spacing:-.01em}
   .actions{justify-content:stretch}.actions .wa{flex:1;padding:13px 16px;font-size:15px}
   .person.open .detail{grid-template-columns:1fr;gap:0}
   .detail{padding:0 16px 18px}
+  .kv{grid-template-columns:1fr;gap:2px}.kv span{margin-top:10px}
 }
 `;
 
@@ -140,6 +154,15 @@ export function defaultMessage(m) {
   return m.report?.founder_message || `Salut ${m.first_name || ''}, c’est Florio, fondateur de LEMO. Merci d’avoir testé LEMO ! Si cela éveille ton intérêt, serais-tu dispo pour en discuter ?`.replace('Salut ,', 'Salut,');
 }
 
+// Invitations d'une personne : combien d'invités sont arrivés, combien il en reste, et de quoi en ajouter.
+function invitesHtml(m) {
+  if (!m.invite_code) return '<p>Débloquées à la fin de son parcours.</p>';
+  const left = Math.max(0, m.invites_total - m.invited_count);
+  const add = (n) => `<form method="post" action="/early-adopters/${esc(m.id)}/invites"><input type="hidden" name="add" value="${n}"><button class="chip" type="submit">+ ${n}</button></form>`;
+  return `<div class="inv"><span><strong>${m.invited_count}</strong> invité${m.invited_count > 1 ? 's' : ''} arrivé${m.invited_count > 1 ? 's' : ''} · <strong>${left}</strong> restante${left > 1 ? 's' : ''} sur ${m.invites_total}</span>${add(1)}${add(5)}</div>
+    ${m.invitees ? `<div class="invitees">Invités : ${esc(m.invitees)}</div>` : ''}`;
+}
+
 function personHtml(m) {
   const r = m.report || {};
   const [dot, label] = status(m);
@@ -150,7 +173,7 @@ function personHtml(m) {
   return `<article class="person" data-id="${esc(m.id)}">
   <div class="row">
     <div class="id"><div class="avatar">${esc(initials(m.first_name))}</div><div><div class="name">${esc(m.first_name || 'Sans prénom')}</div>
-      <div class="meta">${esc(ago(m.updated_at))} · invité par ${esc(m.inviter || 'lien général')}</div></div></div>
+      <div class="meta">${esc(ago(m.updated_at))} · invité par ${esc(m.inviter || 'lien général')}${m.invite_code ? ` · ${m.invited_count}/${m.invites_total} invitations` : ''}</div></div></div>
     <div class="moment">${moment}</div>
     <div class="state"><span class="pill"><span class="dot ${dot}"></span>${esc(label)}</span></div>
     <div class="actions">
@@ -164,6 +187,7 @@ function personHtml(m) {
       ${m.blindspot ? `<h3>${esc(m.followup || 'Relance')}</h3><p class="quote">${esc(m.blindspot)}</p>` : ''}
       ${lines.length ? `<h3>Vu par LEMO${r.thin ? ' · sur un exemple' : ''}</h3><p>${lines.map((l) => `<strong>${esc(l.label)} :</strong> ${esc(l.text)}`).join('<br>')}</p>` : ''}
       ${m.phone ? `<h3>Téléphone</h3><p>${esc(phoneFmt(m.phone))}</p>` : ''}
+      <h3>Invitations</h3>${invitesHtml(m)}
     </div>
     <div>
       ${canWrite ? `<h3>Message prêt (modifiable)</h3>
@@ -173,6 +197,41 @@ function personHtml(m) {
     </div>
   </div>
 </article>`;
+}
+
+// Habillage commun : barre latérale (menu sur mobile), compte en bas, contenu à droite.
+export function shell({ company, active, todo = 0, title, body, script = '' }) {
+  const nav = `
+  <div class="brand"><strong>LEMO</strong><span class="sub" style="font-size:12px;margin:0">Acquisition</span></div>
+  <nav class="nav">
+    <a class="${active === 'members' ? 'on' : ''}" href="/early-adopters">${icon('users')} Early adopters <span class="count">${todo}</span></a>
+  </nav>
+  <div class="group">Administration</div>
+  <nav class="nav">
+    <a class="${active === 'settings' ? 'on' : ''}" href="/settings">${icon('settings')} Réglages</a>
+  </nav>
+  <div class="me"><div class="avatar">${esc(initials(company.name))}</div><div class="who">${esc(company.name)}<span>${esc(company.admin_email)}</span></div>
+    <a href="/logout" title="Sortir" aria-label="Sortir">${icon('logout', 17)}</a></div>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF"><title>${esc(title)} · LEMO</title><style>${CSS}</style></head><body>
+<div class="shell">
+  <aside class="side" id="side">${nav}</aside>
+  <div class="scrim" id="scrim"></div>
+  <div style="flex:1;min-width:0">
+    <header class="top"><button type="button" id="open" aria-label="Menu">${icon('menu', 22)}</button><strong>LEMO</strong><span style="width:34px"></span></header>
+    <main class="main">${body}</main>
+  </div>
+</div>
+<script>
+(function(){
+  var side=document.getElementById('side'),scrim=document.getElementById('scrim');
+  function menu(on){side.classList.toggle('show',on);scrim.classList.toggle('show',on)}
+  document.getElementById('open').addEventListener('click',function(){menu(true)});
+  scrim.addEventListener('click',function(){menu(false)});
+})();
+${script}
+</script>
+</body></html>`;
 }
 
 export function earlyAdoptersView({ company, funnel, members, counts, filter, inviteUrl }) {
@@ -186,26 +245,7 @@ export function earlyAdoptersView({ company, funnel, members, counts, filter, in
   ];
   const top = Math.max(1, ...steps.map((x) => x[1]));
   const tabs = [['todo', 'À recontacter'], ['wip', 'En cours'], ['done', 'Contactés'], ['all', 'Tous']];
-  const nav = `
-  <div class="brand"><strong>LEMO</strong><span class="sub" style="font-size:12px;margin:0">Acquisition</span></div>
-  <nav class="nav">
-    <a class="on" href="/early-adopters">${icon('users')} Early adopters <span class="count">${counts.todo}</span></a>
-  </nav>
-  <div class="group">Administration</div>
-  <nav class="nav">
-    <a href="/">${icon('inbox')} Collectes</a>
-    <a href="/settings">${icon('settings')} Réglages</a>
-  </nav>
-  <div class="me"><div class="avatar">${esc(initials(company.name))}</div><div class="who">${esc(company.name)}<span>${esc(company.admin_email)}</span></div>
-    <a href="/logout" title="Sortir" aria-label="Sortir">${icon('logout', 17)}</a></div>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#FFFFFF"><title>Early adopters · LEMO</title><style>${CSS}</style></head><body>
-<div class="shell">
-  <aside class="side" id="side">${nav}</aside>
-  <div class="scrim" id="scrim"></div>
-  <div style="flex:1;min-width:0">
-    <header class="top"><button type="button" id="open" aria-label="Menu">${icon('menu', 22)}</button><strong>LEMO</strong><span style="width:34px"></span></header>
-    <main class="main">
+  const body = `
       <div class="head">
         <div><h1>Early adopters</h1><p class="sub">Les personnes arrivées par invitation, et celles à recontacter.</p></div>
         <button class="ghost" type="button" id="copy" data-url="${esc(inviteUrl)}">${icon('link', 16)} Copier mon lien d’invitation</button>
@@ -221,15 +261,8 @@ export function earlyAdoptersView({ company, funnel, members, counts, filter, in
       </div></section>
       <nav class="tabs">${tabs.map(([k, l]) => `<a href="?f=${k}" class="${filter === k ? 'on' : ''}">${l}<span>${counts[k]}</span></a>`).join('')}</nav>
       <section class="people">${members.length ? members.map(personHtml).join('') : '<div class="empty">Personne ici pour l’instant.</div>'}</section>
-    </main>
-  </div>
-</div>
-<script>
-(function(){
-  var side=document.getElementById('side'),scrim=document.getElementById('scrim');
-  function menu(on){side.classList.toggle('show',on);scrim.classList.toggle('show',on)}
-  document.getElementById('open').addEventListener('click',function(){menu(true)});
-  scrim.addEventListener('click',function(){menu(false)});
+`;
+  return shell({ company, active: 'members', todo: counts.todo, title: 'Early adopters', body, script: `(function(){
   document.getElementById('copy').addEventListener('click',function(e){
     var b=e.currentTarget,u=b.getAttribute('data-url');
     (navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(function(){b.lastChild.textContent=' Lien copié'},function(){prompt('Ton lien d’invitation',u)});
@@ -247,7 +280,68 @@ export function earlyAdoptersView({ company, funnel, members, counts, filter, in
       });
     });
   });
-})();
-</script>
+})();` });
+}
+
+
+export function settingsView({ company, settings, saved, todo }) {
+  const body = `<div class="head"><div><h1>Réglages</h1><p class="sub">Où tu reçois les alertes, et ton numéro.</p></div></div>
+  <form class="card form" method="post" action="/settings" style="margin-top:24px">
+    ${saved ? '<p class="saved">Enregistré.</p>' : ''}
+    <div class="field"><label for="alert_email">E-mail d’alerte</label>
+      <input id="alert_email" name="alert_email" type="email" value="${esc(settings.alert_email || '')}" placeholder="toi@exemple.fr" autocomplete="email">
+      <p class="help">Un e-mail à chaque parcours terminé : prénom et qui l’a invité, jamais ce que la personne a confié.${settings.email_ready ? '' : ' L’envoi démarre une fois la clé Resend ajoutée sur Railway (variable RESEND_API_KEY).'}</p></div>
+    <div class="field"><label for="owner_phone">Ton numéro WhatsApp</label>
+      <input id="owner_phone" name="owner_phone" inputmode="tel" value="${esc((company.owner_phones || [])[0] || '')}" placeholder="33612345678">
+      <p class="help">Format international, sans le +. Sert à retrouver ton lien d’invitation personnel.</p></div>
+    <div><button class="wa" type="submit">Enregistrer</button></div>
+  </form>
+  <section class="card" style="margin-top:16px;max-width:560px">
+    <h2 style="font-size:16px;font-weight:500;margin-bottom:12px">Notifications sur ton téléphone</h2>
+    <div class="kv"><span>Appli</span><div>ntfy (gratuite, sans compte)</div>
+      <span>Sujet à suivre</span><div>${settings.ntfy_topic ? `<code>${esc(settings.ntfy_topic)}</code>` : 'non configuré'}</div></div>
+  </section>
+  <section class="card" style="margin-top:16px;max-width:560px">
+    <h2 style="font-size:16px;font-weight:500;margin-bottom:12px">Compte</h2>
+    <div class="kv"><span>Identifiant</span><div>${esc(company.admin_email)}</div>
+      <span>Mot de passe</span><div>variable ADMIN_PASSWORD sur Railway</div>
+      <span>Invitations</span><div>${settings.invites_per_member} par nouvel early adopter, à ajuster personne par personne</div></div>
+  </section>`;
+  return shell({ company, active: 'settings', todo, title: 'Réglages', body });
+}
+
+// Page de connexion aux couleurs de LEMO.
+export function loginView({ error = '', logo }) {
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF"><title>Connexion · LEMO</title>
+<style>
+@font-face{font-family:'Montserrat';font-style:normal;font-weight:100 900;font-display:swap;src:url(/public/montserrat.woff2) format('woff2')}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#fff;color:#1A1A1A}
+body{font-family:'Montserrat',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;display:flex;align-items:center;justify-content:center;padding:24px}
+.box{width:100%;max-width:360px;text-align:center}
+.logo{color:#1A1A1A;display:inline-block}.logo svg{height:34px;width:auto;display:block}
+h1{margin-top:36px;font-size:24px;font-weight:600;letter-spacing:-.02em}
+p.sub{margin-top:8px;color:#555;font-size:14px}
+form{margin-top:28px;display:grid;gap:10px;text-align:left}
+label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+input{width:100%;height:50px;border:1px solid #D8D8D8;border-radius:10px;padding:0 16px;font:500 16px 'Montserrat',sans-serif;color:#1A1A1A;outline:3px solid transparent;transition:border-color .16s,outline-color .16s}
+input::placeholder{color:#767676;font-weight:400}
+input:focus{border-color:#1A1A1A;outline-color:rgba(107,124,255,.18)}
+button{margin-top:6px;height:50px;border:0;border-radius:6px;background:#1A1A1A;color:#fff;font:500 15px 'Montserrat',sans-serif;cursor:pointer;transition:background .14s}
+button:hover{background:#6B7CFF}
+.err{margin-top:14px;color:#C44033;font-size:14px}
+</style></head><body>
+<main class="box">
+  <span class="logo" aria-label="LEMO">${logo}</span>
+  <h1>Connexion</h1>
+  <p class="sub">Ton espace early adopters.</p>
+  <form method="post" action="/login">
+    <label for="email">E-mail</label><input id="email" name="email" type="email" placeholder="E-mail" required autocomplete="username">
+    <label for="password">Mot de passe</label><input id="password" name="password" type="password" placeholder="Mot de passe" required autocomplete="current-password">
+    <button type="submit">Se connecter</button>
+  </form>
+  ${error ? `<p class="err">${esc(error)}</p>` : ''}
+</main>
 </body></html>`;
 }

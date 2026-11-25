@@ -10,7 +10,11 @@ import { buildReport } from './report.js';
 import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
-import { earlyAdoptersView } from './crm-view.js';
+import { earlyAdoptersView, settingsView, loginView } from './crm-view.js';
+import { INVITES_PER_MEMBER } from './onboarding.js';
+import fs from 'node:fs';
+
+const MARK = fs.readFileSync(new URL('../public/lemo-mark.svg', import.meta.url), 'utf8').replace('fill="#1A1A1A"', 'fill="currentColor"');
 import { dashboardPng } from './dashboard-card.js';
 import { alertStats, sendNow, addDailyInfo } from './alerts.js';
 import { PRESETS, presetConfig } from './optins.js';
@@ -132,17 +136,17 @@ export function createApp() {
     next();
   });
 
-  app.get('/login', (_req, res) => res.send(V.layout({ title: 'Connexion', body: V.loginPage() })));
+  app.get('/login', (_req, res) => res.send(loginView({ logo: MARK })));
   app.post('/login', async (req, res) => {
     const ip = req.ip;
     const a = loginAttempts.get(ip) || { n: 0, t: Date.now() };
     if (Date.now() - a.t > 15 * 60 * 1000) Object.assign(a, { n: 0, t: Date.now() });
-    if (a.n >= 10) return res.status(429).send(V.layout({ title: 'Connexion', body: V.loginPage('Trop de tentatives, réessayez dans 15 minutes.') }));
+    if (a.n >= 10) return res.status(429).send(loginView({ logo: MARK, error: 'Trop de tentatives, réessaie dans 15 minutes.' }));
     const c = await one('select * from companies where lower(admin_email)=lower($1)', [req.body.email || '']);
     if (!c || !checkPassword(req.body.password || '', c.admin_password_hash)) {
       a.n++;
       loginAttempts.set(ip, a);
-      return res.status(401).send(V.layout({ title: 'Connexion', body: V.loginPage('Identifiants incorrects.') }));
+      return res.status(401).send(loginView({ logo: MARK, error: 'E-mail ou mot de passe incorrect.' }));
     }
     loginAttempts.delete(ip);
     const secure = config.publicUrl.startsWith('https') ? '; Secure' : '';
@@ -175,7 +179,9 @@ export function createApp() {
 
   const ownCollection = (req) => one('select * from collections where id=$1 and company_id=$2', [req.params.id, req.company.id]);
 
-  app.get('/', auth, async (req, res) => {
+  // L'outil d'acquisition s'ouvre sur les early adopters (les anciennes collectes ne sont plus affichées).
+  app.get('/', auth, (_req, res) => res.redirect('/early-adopters'));
+  app.get('/collections', auth, async (req, res) => {
     const collections = await query(
       `select c.*, (select count(*)::int from feedbacks f where f.collection_id=c.id) as n,
               (select count(*)::int from feedbacks f where f.collection_id=c.id and f.urgency in ('high','medium')) as alerts
@@ -269,7 +275,10 @@ export function createApp() {
       (select count(*)::int from members where report is not null) as reported,
       (select count(*)::int from members where invited_by is not null) as invited`);
     const counts = await one(`select ${Object.entries(MEMBER_FILTERS).map(([k, w]) => `count(*) filter (where ${w})::int as ${k}`).join(', ')} from members m`);
-    const members = await query(`select m.*, i.first_name as inviter from members m left join members i on i.id=m.invited_by
+    const members = await query(`select m.*, i.first_name as inviter,
+        (select count(*)::int from members x where x.invited_by=m.id) as invited_count,
+        (select string_agg(coalesce(x.first_name, 'sans prénom'), ', ' order by x.created_at) from members x where x.invited_by=m.id) as invitees
+      from members m left join members i on i.id=m.invited_by
       where ${MEMBER_FILTERS[filter]} order by m.updated_at desc limit 300`);
     for (const m of members) if (typeof m.report === 'string') m.report = JSON.parse(m.report);
     // Lien à copier : le lien personnel du fondateur s'il a fait le parcours (ses invités lui sont rattachés), sinon le lien général.
@@ -278,18 +287,33 @@ export function createApp() {
     const inviteUrl = `${config.publicUrl}/i${me?.invite_code ? `/${me.invite_code}` : ''}`;
     res.send(earlyAdoptersView({ company: req.company, funnel, members, counts, filter, inviteUrl }));
   });
+  // Ajouter des invitations à une personne (+1, +5). On reste en nombre limité : 100 au plus.
+  app.post('/early-adopters/:id/invites', auth, async (req, res) => {
+    const add = Math.min(20, Math.max(1, Number(req.body.add) || 0));
+    await query('update members set invites_total=least(100, invites_total+$2) where id::text=$1', [req.params.id, add]);
+    res.redirect(303, req.get('referer')?.includes('/early-adopters') ? req.get('referer') : '/early-adopters?f=all');
+  });
   app.post('/early-adopters/:id/contacted', auth, async (req, res) => {
     await query('update members set contacted_at=now() where id::text=$1 and opted_out_at is null', [req.params.id]);
     res.sendStatus(204);
   });
 
-  app.get('/settings', auth, (req, res) => res.send(page(req, 'Réglages', V.settingsPage({ company: req.company, saved: req.query.saved }))));
+  app.get('/settings', auth, async (req, res) => {
+    const todo = (await one(`select count(*)::int as n from members where report is not null and contacted_at is null and opted_out_at is null`)).n;
+    const settings = {
+      alert_email: req.company.alert_email,
+      email_ready: Boolean(process.env.RESEND_API_KEY),
+      ntfy_topic: process.env.NTFY_TOPIC || '',
+      invites_per_member: INVITES_PER_MEMBER,
+    };
+    res.send(settingsView({ company: req.company, settings, saved: req.query.saved, todo }));
+  });
   app.post('/settings', auth, async (req, res) => {
-    const phones = String(req.body.owner_phones || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter((p) => p.length >= 8);
-    const threshold = Math.min(100, Math.max(1, Number(req.body.privacy_threshold) || 5));
-    const retention = Math.min(730, Math.max(1, Number(req.body.retention_days) || 90));
-    const readers = String(req.body.reader_phones || '').split(',').map((p) => p.replace(/[^0-9]/g, '')).filter((p) => p.length >= 8);
-    await query('update companies set owner_phones=$2, privacy_threshold=$3, retention_days=$4, reader_phones=$5 where id=$1', [req.company.id, phones, threshold, retention, readers]);
+    const email = String(req.body.alert_email || '').trim().slice(0, 200);
+    const alertEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+    const phone = String(req.body.owner_phone || '').replace(/[^0-9]/g, '');
+    const phones = [phone, ...(req.company.owner_phones || []).slice(1)].filter((p) => p.length >= 8);
+    await query('update companies set alert_email=$2, owner_phones=$3 where id=$1', [req.company.id, alertEmail, phones]);
     res.redirect('/settings?saved=1');
   });
 
