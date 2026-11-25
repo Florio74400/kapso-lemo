@@ -386,7 +386,7 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.equal(outs.length, 4, 'quatre messages d’accueil');
   assert.match(outs[0], /^Hello Florio\. Je suis LEMO/);
   assert.match(outs[1], /5 invitations, débloquées après ta première expérience/);
-  assert.match(outs[2], /Le plus simple pour comprendre/);
+  assert.match(outs[2], /Le plus simple pour comprendre.*confidentielles : seul Florio, le fondateur.*Écris STOP/);
   assert.match(outs[3], /événement marquant de ta journée/);
 
   // Événement marquant -> relance
@@ -403,7 +403,7 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.equal(m.invites_total, 5);
   assert.match(m.invite_code, /^[A-Z0-9]{6}$/);
   outs = await outsOf(P);
-  assert.equal(outs.length, 8, 'schéma, synthèse puis invitations');
+  assert.equal(outs.length, 9, 'schéma, synthèse, vue dirigeant puis invitations');
   assert.match(outs[3], /^Peux-tu me décrire un événement marquant de ta journée \?/);
   assert.match(outs[5], new RegExp(`^\\[image\\] .*/m/${m.card_token}\\.png$`));
   const card = await fetch(`${base}/m/${m.card_token}.png`);
@@ -411,9 +411,12 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   const synth = outs[6];
   assert.match(synth, /^\*Vu par LEMO, à chaud\*\n\*Ressenti :\* /);
   assert.match(synth, /\n\n\*Enquête de satisfaction, à J\+4\*\nIl aurait fallu retrouver le mail.*Réponse type : \*7\/10\*, « Bien, rien à signaler\. »/);
-  assert.match(synth, /\n\n\*La différence\*\nTu as raconté ce moment à chaud.*WhatsApp/);
+  assert.match(synth, /\n\n\*La différence\*\nTu as raconté ce moment à chaud.*WhatsApp.*le moment le plus fort et la fin/);
   assert.doesNotMatch(synth, /plus riche|[—–]/);
-  const invite = outs[7];
+  assert.match(outs[7], /^\[image\] .*\/v\/dirigeant\.png$/);
+  const dash = await fetch(`${base}/v/dirigeant.png`);
+  assert.equal(dash.headers.get('content-type'), 'image/png');
+  const invite = outs[8];
   assert.match(invite, /^Merci Florio\. Tes 5 invitations sont débloquées\./);
   const share = decodeURIComponent(invite.match(/\[Envoyer l'invitation\] https:\/\/wa\.me\/\?text=(.+)$/)[1]);
   assert.match(share, new RegExp(`^Je t'invite sur LEMO.*/i/${m.invite_code}$`));
@@ -425,8 +428,8 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   await say(T, 'Un café.');
   await say(T, 'Bien.');
   const t = await outsOf(T);
-  assert.match(t[t.length - 4], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
-  assert.match(t[t.length - 2], /^\*Vu par LEMO, à chaud\*/);
+  assert.match(t[t.length - 5], /^J'ai très peu d'informations sur ton moment\. Pour te montrer ce que LEMO capte, prenons un exemple :\n\n_« .+ »_$/);
+  assert.match(t[t.length - 3], /^\*Vu par LEMO, à chaud\*/);
 
   // Lien personnel : « Florio t'invite sur LEMO », puis l'invité est rattaché à Florio
   const mine = await fetch(`${base}/i/${m.invite_code}`).then((r) => r.text());
@@ -440,6 +443,14 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   const marcPage = await fetch(`${base}/i/${(await one('select invite_code from members where id=$1', [m.id])).invite_code}`).then((r) => r.text());
   assert.match(marcPage, /Bienvenue, Florio/);
 
+  // STOP : plus de contact, réponses effacées, plus de bouton « Écrire »
+  await say(T, 'STOP');
+  assert.match(await lastOut(T), /^C'est noté : tu ne recevras plus de messages de LEMO/);
+  const stopped = await one('select * from members where phone_hash=$1', [phoneHash(T)]);
+  assert.ok(stopped.opted_out_at);
+  assert.equal(stopped.phone, null);
+  assert.equal(stopped.experience, null);
+
   // CRM : entonnoir et fiche avec bouton « Écrire »
   const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
   const crm = await fetch(`${base}/early-adopters`, { headers: { cookie } }).then((r) => r.text());
@@ -447,6 +458,8 @@ test('invitation : page minimale, relance, synthèse en deux parties, 5 invitati
   assert.match(crm, /Invitations : 1\/5/);
   assert.match(crm, /Vu par LEMO/);
   assert.match(crm, /wa\.me\/33688881111\?text=/);
+  assert.match(crm, /STOP<\/span> Ne plus contacter/);
+  assert.doesNotMatch(crm, /wa\.me\/33655554444/);
 });
 
 test('citation : affichée seulement si elle existe mot pour mot', async () => {
@@ -458,4 +471,22 @@ test('citation : affichée seulement si elle existe mot pour mot', async () => {
 test('rédaction : aucun tiret long ni moyen dans les textes générés', async () => {
   const { noDashes } = await import('../src/llm.js');
   assert.deepEqual(noDashes({ a: 'Ressenti — attente', b: ['x – y'], c: 3 }), { a: 'Ressenti, attente', b: ['x, y'], c: 3 });
+});
+
+test('alerte au fondateur : notification push sans aucun détail confié', async () => {
+  const { notifyNewFeedback } = await import('../src/notify.js');
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  process.env.NTFY_TOPIC = 'lemo-test-topic';
+  globalThis.fetch = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true }; };
+  try {
+    assert.equal(await notifyNewFeedback({ firstName: 'Franz', inviter: 'Florio' }), 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.NTFY_TOPIC;
+  }
+  assert.equal(calls[0].url, 'https://ntfy.sh/');
+  assert.equal(calls[0].body.topic, 'lemo-test-topic');
+  assert.match(calls[0].body.title, /Franz a terminé son parcours/);
+  assert.match(calls[0].body.click, /\/early-adopters$/);
 });

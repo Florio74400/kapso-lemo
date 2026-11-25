@@ -98,9 +98,9 @@ export function cardSvg(r, firstName) {
   t.push(`<line x1="${sx}" y1="${cy + 150}" x2="${sx}" y2="${sy - 14}" stroke="#C8C8D0" stroke-width="2"/>`);
 
   // Conclusion
-  text(80, 1200, 'Les enquêtes arrivent après l’oubli : trop tard pour décider.', 26, 500, INK);
+  text(80, 1200, 'À J+4, on ne retient que le pic et la fin : le détail a disparu.', 26, 500, INK);
   text(80, 1240, 'LEMO capte le vécu à chaud, quand on peut encore agir.', 26, 300, '#555');
-  text(80, 1300, 'Courbe de l’oubli, d’après Ebbinghaus (1885). Illustration.', 17, 300, '#AAA');
+  text(80, 1300, 'Courbe de l’oubli (Ebbinghaus, 1885) et règle pic-fin (Kahneman, 1993). Illustration.', 17, 300, '#AAA');
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <defs><linearGradient id="curve" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${DEEP}"/><stop offset="0.35" stop-color="${ACCENT}"/><stop offset="1" stop-color="${WARM}"/></linearGradient></defs>

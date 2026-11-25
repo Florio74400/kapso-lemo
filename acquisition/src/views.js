@@ -206,18 +206,18 @@ export function earlyAdoptersPage({ funnel, members }) {
   const rows = members
     .map((m) => {
       const r = m.report || {};
-      const write = m.phone ? `https://wa.me/${m.phone}${r.founder_message ? `?text=${encodeURIComponent(r.founder_message)}` : ''}` : null;
+      const write = m.phone && !m.opted_out_at ? `https://wa.me/${m.phone}${r.founder_message ? `?text=${encodeURIComponent(r.founder_message)}` : ''}` : null;
       return `<tr>
 <td><strong>${esc(m.first_name || '—')}</strong><div class="mute">+${esc(m.phone || '')}</div><div class="mute">${new Date(m.created_at).toLocaleDateString('fr-FR')}</div></td>
-<td>${r.key_moment ? esc(r.key_moment) : m.experience ? esc(m.experience.slice(0, 120)) : '—'}${r.blind_spot ? `<div class="mute">Angle mort : ${esc(r.blind_spot)}</div>` : ''}
-<details><summary class="mute">Détail</summary>
+<td>${m.opted_out_at ? '<span class="mute">Réponses supprimées à sa demande</span>' : r.key_moment ? esc(r.key_moment) : m.experience ? esc(m.experience.slice(0, 120)) : '—'}${r.blind_spot ? `<div class="mute">Angle mort : ${esc(r.blind_spot)}</div>` : ''}
+<details><summary class="mute">Son récit complet et la synthèse</summary>
 ${m.experience ? `<p class="mute">Son moment</p><blockquote>${esc(m.experience)}</blockquote>` : ''}
 ${m.blindspot ? `<p class="mute">${esc(m.followup || 'Relance')}</p><blockquote>${esc(m.blindspot)}</blockquote>` : ''}
 ${r.lemo_lines ? `<p class="mute">Synthèse reçue${r.thin ? ' (sur un exemple : réponse trop courte)' : ''}</p><blockquote>${esc(synthesisText(r))}</blockquote>` : ''}
 ${m.card_token ? `<p class="mute">Schéma envoyé</p><img src="/m/${esc(m.card_token)}.png" alt="" style="width:100%;max-width:420px;border:1px solid var(--line);border-radius:8px">` : ''}
 ${r.founder_message ? `<p class="mute">Message prêt</p><blockquote>${esc(r.founder_message)}</blockquote>` : ''}
 </details></td>
-<td>${esc(STEP_LABEL[m.state] || m.state)}<div class="mute">Invité par ${esc(m.inviter || 'lien général')}</div><div class="mute">Invitations : ${m.invited_count}/${m.invites_total}</div></td>
+<td>${m.opted_out_at ? '<span class="pill high">STOP</span> Ne plus contacter' : esc(STEP_LABEL[m.state] || m.state)}<div class="mute">Invité par ${esc(m.inviter || 'lien général')}</div><div class="mute">Invitations : ${m.invited_count}/${m.invites_total}</div></td>
 <td>${write ? `<a href="${esc(write)}" target="_blank" rel="noopener"><button>Écrire</button></a>` : ''}</td></tr>`;
     })
     .join('');

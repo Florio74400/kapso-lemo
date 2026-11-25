@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { query, one } from './db.js';
 import { reply, recordInbound, phoneHash } from './conversation.js';
 import { sendImage } from './kapso.js';
+import { notifyNewFeedback } from './notify.js';
 import { blindSpotQuestion, experienceReport } from './llm.js';
 
 export const INVITES_PER_MEMBER = 5;
@@ -42,13 +43,14 @@ export async function welcome(msg) {
   await query(
     `insert into members (phone_hash, phone, first_name, invites_total, invited_by) values ($1,$2,$3,$4,$5)
      on conflict (phone_hash) do update set phone=excluded.phone, first_name=coalesce(excluded.first_name, members.first_name),
-       invited_by=coalesce(members.invited_by, excluded.invited_by), invites_total=excluded.invites_total, state='awaiting_experience', updated_at=now()`,
+       invited_by=coalesce(members.invited_by, excluded.invited_by), invites_total=excluded.invites_total, opted_out_at=null, state='awaiting_experience', updated_at=now()`,
     [hash, msg.phone, name, INVITES_PER_MEMBER, inviter?.id || null],
   );
+  await query('delete from opt_outs where phone_hash=$1', [hash]); // « Hey LEMO » après un STOP = nouveau consentement
   const lines = [
     `Hello${name ? ` ${name}` : ''}. Je suis LEMO, le moteur d'analyse émotionnelle en temps réel : avant, pendant et après chaque expérience.`,
     `LEMO est en accès sur invitation uniquement. Tu disposes de ${INVITES_PER_MEMBER} invitations, débloquées après ta première expérience.`,
-    "Le plus simple pour comprendre, c'est d'essayer.",
+    "Le plus simple pour comprendre, c'est d'essayer. Tes réponses restent confidentielles : seul Florio, le fondateur, les lit et peut te recontacter. Écris STOP à tout moment pour tout arrêter.",
     'Peux-tu me décrire un événement marquant de ta journée ? Par écrit ou en vocal.',
   ];
   for (const [i, line] of lines.entries()) {
@@ -60,7 +62,18 @@ export async function welcome(msg) {
 
 // Membre au milieu du parcours (événement marquant ou relance) ?
 export async function inProgress(phone) {
-  return one(`select * from members where phone_hash=$1 and state in ('awaiting_experience','awaiting_blindspot')`, [phoneHash(phone)]);
+  return one(`select * from members where phone_hash=$1 and opted_out_at is null and state in ('awaiting_experience','awaiting_blindspot')`, [phoneHash(phone)]);
+}
+
+// STOP : plus aucun contact (le bouton « Écrire » du CRM disparaît), réponses et échanges effacés.
+export async function optOutMember(phoneHashValue) {
+  const m = await one(
+    `update members set opted_out_at=now(), phone=null, experience=null, followup=null, blindspot=null, report=null, card_token=null, projection=null, lead=null, updated_at=now()
+     where phone_hash=$1 returning id`,
+    [phoneHashValue],
+  );
+  if (m) await query(`delete from messages where phone_hash=$1 and session_id is null`, [phoneHashValue]);
+  return Boolean(m);
 }
 
 const spoken = (msg) => (msg.kind === 'audio' ? msg.transcript : msg.body)?.trim();
@@ -119,8 +132,12 @@ export async function receiveBlindspot(msg, member) {
   await pause(PAUSE_MS);
   await reply(msg.phone, synthesisMessage(report));
   await pause(PAUSE_MS * 2);
+  await sendCard(msg.phone, `${config.publicUrl}/v/dirigeant.png`, "Et voilà ce que verrait une équipe dirigeante : 200 retours à chaud sur un domaine skiable, en temps réel. Données fictives, pour l'exemple.");
+  await pause(PAUSE_MS * 2);
   const { body, cta } = inviteMessage({ firstName: member.first_name, total: member.invites_total, code });
   await reply(msg.phone, body, { cta });
+  const inviter = member.invited_by ? await one('select first_name from members where id=$1', [member.invited_by]) : null;
+  notifyNewFeedback({ firstName: member.first_name, inviter: inviter?.first_name }).catch((e) => console.error('[alerte]', e.message));
   return 'onboarding_report';
 }
 
@@ -136,7 +153,7 @@ export function synthesisMessage(r) {
     ].join('\n'),
     [
       '*La différence*',
-      "Tu as raconté ce moment à chaud, en deux messages, sur WhatsApp, l'outil que tu utilises déjà tous les jours. Une équipe peut donc ajuster ou réagir le jour même. Une enquête à J+4 arrive après l'oubli : une note lissée, trop tard pour décider.",
+      "Tu as raconté ce moment à chaud, en deux messages, sur WhatsApp, l'outil que tu utilises déjà tous les jours. Une équipe peut donc ajuster ou réagir le jour même. Une enquête à J+4 arrive après l'oubli : la mémoire ne garde que le moment le plus fort et la fin, le reste se lisse en une note, trop tard pour décider.",
     ].join('\n'),
   ].join('\n\n');
 }

@@ -299,6 +299,10 @@ export async function analyzeSession(s) {
 
 async function optOut(msg, hash) {
   await query('insert into opt_outs (phone_hash) values ($1) on conflict do nothing', [hash]);
+  if (await onboarding.optOutMember(hash)) {
+    await reply(msg.phone, "C'est noté : tu ne recevras plus de messages de LEMO, et tes réponses ont été supprimées. Écris « Hey LEMO » si tu changes d'avis.");
+    return 'opted_out';
+  }
   const active = await query(
     `update sessions set state='opted_out', phone=null, updated_at=now(), completed_at=now()
      where phone_hash=$1 and state in ('awaiting_consent','awaiting_answer','awaiting_followup') returning id`,
