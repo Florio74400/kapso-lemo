@@ -607,10 +607,10 @@ test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le 
   // Après la démo : message de fin fixe (sans IA), deux sorties : inviter, ou parler à un référent
   await say(L, "Ok, très bien, j'ai vu les retours. Qu'est-ce que je fais maintenant ?");
   const end = await lastOut(L);
-  assert.match(end, /^Ta démo LEMO est terminée, merci pour ces échanges\.\n\nPour aller plus loin :\n• inviter 5 personnes à vivre LEMO : .*\/go\/i\/[A-Z0-9]{6}\n• parler de la mise en place/);
-  assert.match(end, /\[Parler à un référent\] .*\/go\/r\/[A-Z0-9]{6}$/);
-  const ref = await fetch(end.match(/\[Parler à un référent\] (\S+)$/)[1].replace(/^https?:\/\/[^/]+/, base), { redirect: 'manual', headers: BROWSER });
-  assert.match(decodeURIComponent(ref.headers.get('location')), new RegExp(`^https://wa\\.me/${OWNER}\\?text=Bonjour, c'est Mehdi\\. J'ai testé LEMO`));
+  assert.match(end, /^Ta démo LEMO est terminée, merci pour ces échanges\.\n\nPour aller plus loin :\n• inviter 5 personnes à vivre LEMO : .*\/go\/i\/[A-Z0-9]{6}\n• en savoir plus sur la mise en place de LEMO : contacte l'équipe LEMO avec le bouton\.$/m);
+  assert.match(end, /\[Contacter LEMO\] .*\/go\/r\/[A-Z0-9]{6}$/);
+  const ref = await fetch(end.match(/\[Contacter LEMO\] (\S+)$/)[1].replace(/^https?:\/\/[^/]+/, base), { redirect: 'manual', headers: BROWSER });
+  assert.match(decodeURIComponent(ref.headers.get('location')), new RegExp(`^https://wa\\.me/${OWNER}\\?text=Bonjour, c'est Mehdi\\. J'ai testé LEMO et j'aimerais en savoir plus sur sa mise en place\\.$`));
   await say(L, 'Créer ma campagne', { buttonId: 'campaign_start' });
   assert.match(await lastOut(L), /^Ta démo LEMO est terminée/, 'une seule campagne par personne');
   await say(L, "Hey LEMO, c'est Mehdi !");
@@ -625,7 +625,7 @@ test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le 
   assert.match(crm, /Test A\/B · fin de parcours/);
   assert.match(crm, /Créer ma campagne/);
   assert.match(crm, /Réponses complètes/);
-  assert.match(crm, /Référent contacté/);
+  assert.match(crm, /Équipe LEMO contactée/);
   assert.match(crm, /« Envoyer l’invitation »|Envoyer l’invitation/);
   assert.match(crm, new RegExp(`Campagne · ${c.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });

@@ -70,7 +70,7 @@ export async function wantsCampaign(msg, member) {
 
 // ---------- Fin de démo : plus aucun appel à l'IA ----------
 // Tout message après la démo (ou après la campagne) reçoit ce message fixe : inviter 5 personnes,
-// ou parler à un référent LEMO (le WhatsApp perso du fondateur, message prérempli).
+// ou contacter l'équipe LEMO (le WhatsApp perso du fondateur, message prérempli).
 export async function isFounder(phone) {
   return Boolean(await one('select 1 from companies where $1 = any(owner_phones)', [phone]));
 }
@@ -80,16 +80,16 @@ export async function endOfDemo(msg, member) {
   const total = member.invites_total;
   await reply(
     msg.phone,
-    `Ta démo LEMO est terminée, merci pour ces échanges.\n\nPour aller plus loin :\n• inviter ${total} personnes à vivre LEMO : ${config.publicUrl}/go/i/${member.invite_code}\n• parler de la mise en place de LEMO dans ton entreprise avec un référent : touche le bouton.`,
-    { cta: { text: 'Parler à un référent', url: `${config.publicUrl}/go/r/${member.invite_code}`, footer: 'Réponse personnelle, sans engagement' } },
+    `Ta démo LEMO est terminée, merci pour ces échanges.\n\nPour aller plus loin :\n• inviter ${total} personnes à vivre LEMO : ${config.publicUrl}/go/i/${member.invite_code}\n• en savoir plus sur la mise en place de LEMO : contacte l'équipe LEMO avec le bouton.`,
+    { cta: { text: 'Contacter LEMO', url: `${config.publicUrl}/go/r/${member.invite_code}`, footer: 'Réponse personnelle, sans engagement' } },
   );
   await logEvent(member.id, member.variant, 'limit_shown');
   return 'demo_finished';
 }
 
-// Message prérempli vers le référent (le fondateur), quand on touche « Parler à un référent ».
+// Message prérempli vers l'équipe LEMO (le fondateur), quand on touche « Contacter LEMO ».
 export function referentText(firstName) {
-  return `Bonjour, c'est ${firstName || 'moi'}. J'ai testé LEMO et j'aimerais en savoir plus sur sa mise en place dans mon entreprise.`;
+  return `Bonjour, c'est ${firstName || 'moi'}. J'ai testé LEMO et j'aimerais en savoir plus sur sa mise en place.`;
 }
 
 // Participant qui réécrit après avoir répondu : un merci fixe, sans IA.
