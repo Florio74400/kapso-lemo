@@ -16,6 +16,8 @@ const spoken = (msg) => (msg.kind === 'audio' ? msg.transcript : msg.body)?.trim
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from(crypto.randomBytes(6), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 
+const T = (c, tu, vous) => (c.register === 'vous' ? vous : tu);
+
 export const CAMPAIGN_RE = /\(campagne\s+([A-Z0-9]{6})\)/i;
 export const START_RE = /^\s*cr[ée]er\s+(ma\s+)?campagne/i;
 
@@ -61,7 +63,44 @@ export function inviteShareText(inviteCode) {
 
 // ---------- Variante B, côté dirigeant ----------
 export async function wantsCampaign(msg, member) {
-  return member.variant === 'B' && !member.opted_out_at && (msg.buttonId === 'campaign_start' || START_RE.test(msg.body || ''));
+  if (member.variant !== 'B' || member.opted_out_at) return false;
+  if (!(msg.buttonId === 'campaign_start' || START_RE.test(msg.body || ''))) return false;
+  return !(await one('select 1 from campaigns where member_id=$1', [member.id])); // une seule campagne par personne
+}
+
+// ---------- Fin de démo : plus aucun appel à l'IA ----------
+// Tout message après la démo (ou après la campagne) reçoit ce message fixe : inviter 5 personnes,
+// ou parler à un référent LEMO (le WhatsApp perso du fondateur, message prérempli).
+export async function isFounder(phone) {
+  return Boolean(await one('select 1 from companies where $1 = any(owner_phones)', [phone]));
+}
+
+export async function endOfDemo(msg, member) {
+  if (!(await recordInbound(msg, { role: 'respondent' }))) return 'ignored:duplicate';
+  const total = member.invites_total;
+  await reply(
+    msg.phone,
+    `Ta démo LEMO est terminée, merci pour ces échanges.\n\nPour aller plus loin :\n• inviter ${total} personnes à vivre LEMO : ${config.publicUrl}/go/i/${member.invite_code}\n• parler de la mise en place de LEMO dans ton entreprise avec un référent : touche le bouton.`,
+    { cta: { text: 'Parler à un référent', url: `${config.publicUrl}/go/r/${member.invite_code}`, footer: 'Réponse personnelle, sans engagement' } },
+  );
+  await logEvent(member.id, member.variant, 'limit_shown');
+  return 'demo_finished';
+}
+
+// Message prérempli vers le référent (le fondateur), quand on touche « Parler à un référent ».
+export function referentText(firstName) {
+  return `Bonjour, c'est ${firstName || 'moi'}. J'ai testé LEMO et j'aimerais en savoir plus sur sa mise en place dans mon entreprise.`;
+}
+
+// Participant qui réécrit après avoir répondu : un merci fixe, sans IA.
+export async function participantDone(phone) {
+  return one(`select r.id, c.register, m.first_name as leader from campaign_responses r join campaigns c on c.id=r.campaign_id join members m on m.id=c.member_id
+    where r.phone_hash=$1 and r.state='done' order by r.completed_at desc limit 1`, [phoneHash(phone)]);
+}
+export async function participantAfter(msg, r) {
+  if (!(await recordInbound(msg, { role: 'respondent' }))) return 'ignored:duplicate';
+  await reply(msg.phone, T(r, `Merci, ton retour a bien été transmis à ${r.leader}. Pour découvrir LEMO à ton tour, écris « Hey LEMO ».`, `Merci, votre retour a bien été transmis à ${r.leader}. Pour découvrir LEMO à votre tour, écrivez « Hey LEMO ».`));
+  return 'participant_after';
 }
 
 export async function startCampaign(msg, member) {
@@ -119,7 +158,6 @@ export function participantHello(campaign, leader) {
 }
 
 // ---------- Variante B, côté participant ----------
-const T = (c, tu, vous) => (c.register === 'vous' ? vous : tu);
 
 export async function campaignByCode(code) {
   return one(

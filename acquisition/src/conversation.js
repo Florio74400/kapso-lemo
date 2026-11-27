@@ -118,7 +118,12 @@ async function route(msg) {
   const campaignCode = text.match(campaigns.CAMPAIGN_RE)?.[1];
   if (campaignCode) return campaigns.participantStart(msg, campaignCode);
   // Accueil des early adopters (« Hey LEMO, c'est Florio ! »), puis leur première expérience
-  if (onboarding.HEY_RE.test(text)) return onboarding.welcome(msg);
+  if (onboarding.HEY_RE.test(text)) {
+    // Une seule démo par personne (le fondateur peut recommencer pour ses tests)
+    const done = await onboarding.memberByPhone(msg.phone);
+    if (done?.state === 'experienced' && done.invite_code && !(await campaigns.isFounder(msg.phone))) return campaigns.endOfDemo(msg, done);
+    return onboarding.welcome(msg);
+  }
   if (!STOP_RE.test(text)) {
     const participant = await campaigns.participantInProgress(msg.phone);
     if (participant) return campaigns.participantAnswer(msg, participant);
@@ -131,6 +136,10 @@ async function route(msg) {
     // Variante B : « Créer ma campagne »
     const member = await onboarding.memberByPhone(msg.phone);
     if (member && (await campaigns.wantsCampaign(msg, member))) return campaigns.startCampaign(msg, member);
+    // Démo terminée : message de fin fixe, plus d'IA
+    if (member?.state === 'experienced' && member.invite_code) return campaigns.endOfDemo(msg, member);
+    const after = await campaigns.participantDone(msg.phone);
+    if (after) return campaigns.participantAfter(msg, after);
   }
 
   // 1. Désabonnement

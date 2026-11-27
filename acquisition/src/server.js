@@ -11,7 +11,7 @@ import { startJobs } from './jobs.js';
 import * as V from './views.js';
 import { invitePage } from './invite-page.js';
 import { earlyAdoptersView, settingsView, loginView, campaignPage } from './crm-view.js';
-import { logEvent, inviteShareText, campaignByCode, participantHello } from './campaigns.js';
+import { logEvent, inviteShareText, campaignByCode, participantHello, referentText } from './campaigns.js';
 
 // Les robots d'aperçu (WhatsApp, réseaux) ne comptent ni comme des visites ni comme des clics.
 const isPreviewBot = (req) => {
@@ -110,6 +110,13 @@ export function createApp() {
     if (!m) return res.redirect(302, `${config.publicUrl}/i`);
     if (!isPreviewBot(req)) await logEvent(m.id, m.variant || 'A', 'cta_click');
     res.redirect(302, `https://wa.me/?text=${encodeURIComponent(inviteShareText(m.invite_code))}`);
+  });
+  app.get('/go/r/:code', async (req, res) => {
+    const m = await one('select id, variant, first_name from members where invite_code=$1', [String(req.params.code).toUpperCase()]);
+    const owner = (await one('select owner_phones from companies order by created_at limit 1'))?.owner_phones?.[0];
+    if (!owner) return res.redirect(302, `${config.publicUrl}/i`);
+    if (m && !isPreviewBot(req)) await logEvent(m.id, m.variant, 'referent_click');
+    res.redirect(302, `https://wa.me/${owner}?text=${encodeURIComponent(referentText(m?.first_name))}`);
   });
   app.get('/go/c/:code', async (req, res) => {
     const c = await campaignByCode(req.params.code);
@@ -327,8 +334,8 @@ export function createApp() {
     const invitesA = await one(`select count(*)::int as arrived, count(*) filter (where x.report is not null)::int as done
       from members x join members y on y.id=x.invited_by where y.variant='A'`);
     const ab = {
-      A: { shown: people('A:shown'), click: people('A:cta_click'), arrived: invitesA.arrived, done: invitesA.done },
-      B: { shown: people('B:shown'), click: people('B:cta_click'), created: people('B:campaign_created'), forwarded: people('B:forward_click'), opened: times('B:participant_open'), started: times('B:participant_start'), done: times('B:participant_done') },
+      A: { shown: people('A:shown'), click: people('A:cta_click'), arrived: invitesA.arrived, done: invitesA.done, referent: people('A:referent_click') },
+      B: { shown: people('B:shown'), click: people('B:cta_click'), created: people('B:campaign_created'), forwarded: people('B:forward_click'), opened: times('B:participant_open'), started: times('B:participant_start'), done: times('B:participant_done'), referent: people('B:referent_click') },
     };
     // Lien à copier : le lien personnel du fondateur s'il a fait le parcours (ses invités lui sont rattachés), sinon le lien général.
     const owner = (req.company.owner_phones || [])[0];

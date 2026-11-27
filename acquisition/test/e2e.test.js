@@ -604,12 +604,28 @@ test('test A/B : variante B, de « Créer ma campagne » au retour reçu par le 
   assert.match(back, /^\*Retour 1 · .+\*\n\*Ressenti :\* /);
   assert.doesNotMatch(back.split('\n').slice(1).join('\n'), /\b(tu|te|ton|ta|tes|t')\b/i, 'le dirigeant lit le retour de quelqu’un d’autre : jamais « tu »');
 
+  // Après la démo : message de fin fixe (sans IA), deux sorties : inviter, ou parler à un référent
+  await say(L, "Ok, très bien, j'ai vu les retours. Qu'est-ce que je fais maintenant ?");
+  const end = await lastOut(L);
+  assert.match(end, /^Ta démo LEMO est terminée, merci pour ces échanges\.\n\nPour aller plus loin :\n• inviter 5 personnes à vivre LEMO : .*\/go\/i\/[A-Z0-9]{6}\n• parler de la mise en place/);
+  assert.match(end, /\[Parler à un référent\] .*\/go\/r\/[A-Z0-9]{6}$/);
+  const ref = await fetch(end.match(/\[Parler à un référent\] (\S+)$/)[1].replace(/^https?:\/\/[^/]+/, base), { redirect: 'manual', headers: BROWSER });
+  assert.match(decodeURIComponent(ref.headers.get('location')), new RegExp(`^https://wa\\.me/${OWNER}\\?text=Bonjour, c'est Mehdi\\. J'ai testé LEMO`));
+  await say(L, 'Créer ma campagne', { buttonId: 'campaign_start' });
+  assert.match(await lastOut(L), /^Ta démo LEMO est terminée/, 'une seule campagne par personne');
+  await say(L, "Hey LEMO, c'est Mehdi !");
+  assert.match(await lastOut(L), /^Ta démo LEMO est terminée/, 'une seule démo par personne');
+  // Le participant qui réécrit : merci fixe, sans IA
+  await say(P1, 'Super merci !');
+  assert.match(await lastOut(P1), /^Merci, ton retour a bien été transmis à Mehdi\./);
+
   // Le CRM : test A/B et campagne dans la fiche
   const cookie = (await fetch(`${base}/login`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ email: 'a@test.fr', password: 'motdepasse-test' }) })).headers.get('set-cookie').split(';')[0];
   const crm = await fetch(`${base}/early-adopters?f=all`, { headers: { cookie } }).then((r) => r.text());
   assert.match(crm, /Test A\/B · fin de parcours/);
   assert.match(crm, /Créer ma campagne/);
   assert.match(crm, /Réponses complètes/);
+  assert.match(crm, /Référent contacté/);
   assert.match(crm, /« Envoyer l’invitation »|Envoyer l’invitation/);
   assert.match(crm, new RegExp(`Campagne · ${c.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 });
@@ -619,4 +635,9 @@ test('lien du fondateur : toujours « Florio t’invite », même testé sous un
   await query(`insert into members (phone_hash, phone, first_name, invite_code, state) values ($1,$2,'Mehdi','FNDR01','experienced') on conflict (phone_hash) do update set first_name='Mehdi', invite_code='FNDR01'`, [phoneHash(F), F]);
   const page = await fetch(`${base}/i/FNDR01`).then((r) => r.text());
   assert.match(page, /og:title" content="Florio t&#39;invite sur LEMO"/);
+});
+
+test('le fondateur peut refaire la démo pour ses tests', async () => {
+  await say(OWNER, "Hey LEMO, c'est Florio !");
+  assert.match(await lastOut(OWNER), /Peux-tu me décrire un événement marquant de ta journée/);
 });

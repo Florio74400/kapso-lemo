@@ -190,10 +190,10 @@ function abHtml(ab) {
   <section class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:12px">
     <div class="card"><h2 style="font-size:16px;font-weight:500">A · « Envoyer l’invitation »</h2>
       <p class="sub" style="font-size:13px">5 invitations à transférer, message prêt.</p>
-      <div style="margin-top:8px">${rows(ab.A, [['Message vu', ab.A.shown], ['Bouton touché', ab.A.click], ['Invités arrivés', ab.A.arrived], ['Invités allés au bout', ab.A.done]])}</div></div>
+      <div style="margin-top:8px">${rows(ab.A, [['Message vu', ab.A.shown], ['Bouton touché', ab.A.click], ['Invités arrivés', ab.A.arrived], ['Invités allés au bout', ab.A.done], ['Référent contacté', ab.A.referent]])}</div></div>
     <div class="card"><h2 style="font-size:16px;font-weight:500">B · « Créer ma campagne »</h2>
       <p class="sub" style="font-size:13px">Sujet choisi, question rédigée par LEMO, 5 personnes.</p>
-      <div style="margin-top:8px">${rows(ab.B, [['Message vu', ab.B.shown, 'b'], ['Bouton touché', ab.B.click, 'b'], ['Campagne créée', ab.B.created, 'b'], ['Campagne transférée', ab.B.forwarded, 'b'], ['Participants arrivés', ab.B.started, 'b'], ['Réponses complètes', ab.B.done, 'b']])}</div></div>
+      <div style="margin-top:8px">${rows(ab.B, [['Message vu', ab.B.shown, 'b'], ['Bouton touché', ab.B.click, 'b'], ['Campagne créée', ab.B.created, 'b'], ['Campagne transférée', ab.B.forwarded, 'b'], ['Participants arrivés', ab.B.started, 'b'], ['Réponses complètes', ab.B.done, 'b'], ['Référent contacté', ab.B.referent, 'b']])}</div></div>
   </section>`;
 }
 
